@@ -1,0 +1,38 @@
+name: Refresh weather warnings
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: warnings-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch warning snapshot
+        run: |
+          node scripts/fetch-warnings.js
+          node scripts/fetch-gd-fire.js || echo "广东森林火险快照未更新"
+      - name: Commit snapshot
+        run: |
+          if [ -z "$(git status --porcelain data/warnings.json data/gd-fire.json)" ]; then
+            echo "No warning changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/warnings.json
+          [ -f data/gd-fire.json ] && git add data/gd-fire.json
+          git commit -m "chore: refresh weather warnings"
+          git push

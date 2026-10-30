@@ -1,0 +1,8 @@
+node_modules/
+cache/
+vibe_images/
+.tmp/
+*.log
+.tmp*
+.DS_Store
+Thumbs.db

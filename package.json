@@ -1,0 +1,23 @@
+{
+  "name": "huanan-weather-map",
+  "version": "1.0.0",
+  "description": "华南五省气象可视化地图（中央气象台数据）",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "snapshot": "node scripts/fetch-nmc.js",
+    "geo": "node scripts/build-geo.js",
+    "shot": "node scripts/shot.js",
+    "test:ui": "node scripts/test-ui.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  },
+  "private": true,
+  "devDependencies": {
+    "polygon-clipping": "^0.15.7"
+  }
+}

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#eef6fa" />
+<title>华南五省气象图 · 粤湘桂赣闽</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23ffffff'/%3E%3Ccircle cx='16' cy='14' r='6' fill='%23f7b955'/%3E%3Cpath d='M9 24h14a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 10.4 15.3 4 4 0 0 0 9 24Z' fill='%23cfe0ea'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><circle cx="16" cy="13.5" r="5.8" fill="#f7b955"/><path d="M8.6 23.5h14.2a4.4 4.4 0 0 0 .6-8.76A6.4 6.4 0 0 0 10.2 15 3.9 3.9 0 0 0 8.6 23.5Z" fill="#d5e5ef"/></svg>
+      </span>
+      <div class="brand-text">
+        <strong>华南气象</strong>
+        <span>粤 · 湘 · 桂 · 赣 · 闽</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="status" id="statusChip"><i class="dot"></i><span id="statusText">载入中</span></span>
+      <button class="refresh func-entry" id="funcEntry" type="button" aria-label="功能中心">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.6" y="3.6" width="7" height="7" rx="1.7" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.4" y="3.6" width="7" height="7" rx="1.7" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3.6" y="13.4" width="7" height="7" rx="1.7" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.4" y="13.4" width="7" height="7" rx="1.7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>功能</span>
+      </button>
+      <button class="refresh radar-entry" id="radarEntry" type="button" aria-label="雷达拼图">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 12l6-4.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg>
+      </button>
+      <button class="refresh" id="refreshBtn" type="button" aria-label="刷新实况">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M20 4.5V11h-6.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>刷新</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="map-wrap" id="mapWrap">
+      <div class="map-title">
+        <p class="kicker">华南五省</p>
+        <h1 id="mapMetric">实时气温</h1>
+        <p class="meta">
+          <span id="mapTime">—</span>
+          <i></i>
+          <span id="mapSource">中央气象台实况</span>
+        </p>
+      </div>
+
+      <div class="map-canvas" id="mapCanvas">
+        <div id="map" aria-label="华南五省气象色块地图"></div>
+
+        <div class="zoom-controls">
+          <button type="button" data-zoom="in" aria-label="放大">+</button>
+          <button type="button" data-zoom="out" aria-label="缩小">−</button>
+          <button type="button" data-zoom="reset" aria-label="复位">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4.5h-4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+        <p class="map-hint" id="mapHint">滚轮缩放 · 拖动平移 · 点击城市看详情</p>
+      </div>
+
+      <div class="side-col">
+        <div class="legend" id="legend"></div>
+        <section class="rank-card" id="rankCard" aria-label="城市排行">
+          <header class="rank-head">
+            <div class="rank-title">
+              <span class="kicker">城市排行</span>
+              <h3 id="rankTitle">整点气温</h3>
+            </div>
+            <button class="rank-more" id="rankMore" type="button" aria-label="查看完整排行">全部</button>
+          </header>
+          <p class="rank-meta" id="rankMeta">加载中…</p>
+          <div class="rank-chips" id="rankChips" aria-label="按省份筛选"></div>
+          <ol class="rank-list" id="rankList"></ol>
+          <button class="rank-open" id="rankOpen" type="button">查看完整排行</button>
+        </section>
+      </div>
+
+      <div class="metric-tabs" id="metricTabs" role="tablist" aria-label="图层切换"></div>
+    </div>
+  </main>
+
+  <section class="overview" id="overview" aria-label="五省概览"></section>
+
+  <footer class="foot">
+    <span>数据：中央气象台（nmc.cn）站点实况与预报</span>
+    <span>边界：DataV.GeoAtlas</span>
+    <span>仅供学习参考</span>
+  </footer>
+</div>
+
+<section class="center-page" id="centerPage" aria-hidden="true">
+  <header class="center-top">
+    <button class="center-back" id="centerBack" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      返回地图
+    </button>
+    <div class="center-brand"><span>华南气象</span><b>功能中心</b></div>
+    <label class="center-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      <input id="centerSearch" type="search" placeholder="搜索功能，如地震、台风" autocomplete="off" />
+    </label>
+  </header>
+  <div class="center-body">
+    <div class="center-hero">
+      <p class="kicker">查询工具</p>
+      <h1>功能中心</h1>
+      <p>地震、预警、台风等查询入口，按类别逐步接入；地图与雷达仍在首页。</p>
+    </div>
+    <div class="center-chips" id="centerChips" role="group" aria-label="功能分类">
+      <button type="button" data-cat="all" class="active">全部</button>
+      <button type="button" data-cat="灾害与预警">灾害与预警</button>
+      <button type="button" data-cat="fav">★ 收藏</button>
+    </div>
+    <div class="center-grid" id="centerGrid"></div>
+    <p class="center-foot">更多查询功能将陆续接入 · 点击 ☆ 可收藏</p>
+  </div>
+</section>
+
+<section class="quake-page" id="quakePage" aria-hidden="true">
+  <header class="quake-top">
+    <button class="center-back" id="quakeBack" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      功能中心
+    </button>
+    <div class="center-brand"><span>华南气象</span><b>地震信息</b></div>
+    <div class="quake-source"><i class="dot"></i><span id="quakeSource">中国地震台网</span><span id="quakeUpdated">连接中…</span></div>
+    <button class="quake-refresh" id="quakeRefresh" type="button">刷新</button>
+  </header>
+  <div class="quake-body">
+    <div class="quake-alert calm" id="quakeAlert">
+      <span class="qa-label">速报</span>
+      <span class="qa-text">正在获取最新地震信息…</span>
+      <span class="qa-time"></span>
+    </div>
+    <div class="quake-stats" id="quakeStats"></div>
+    <div class="quake-grid">
+      <div class="quake-card quake-map-card">
+        <div class="quake-card-head">
+          <h2>震中分布</h2>
+          <div class="quake-scope" id="quakeScope" role="group" aria-label="震中范围">
+            <button type="button" data-scope="all" class="active">全国</button>
+            <button type="button" data-scope="south">华南</button>
+          </div>
+        </div>
+        <div id="quakeMap" class="quake-map"></div>
+        <div class="quake-map-foot">
+          <p class="quake-map-note">点选震中可查看地形与行政边界 · 近 5 天中国及周边</p>
+          <div class="quake-legend" aria-label="震级颜色">
+            <span><i style="--c:#5f9fbf"></i>M&lt;3</span>
+            <span><i style="--c:#e0a51b"></i>3–4</span>
+            <span><i style="--c:#ea7a3b"></i>4–5</span>
+            <span><i style="--c:#d8452f"></i>≥5</span>
+          </div>
+        </div>
+      </div>
+      <aside class="quake-card quake-list-card">
+        <div class="quake-card-head">
+          <h2>最新速报</h2>
+          <span class="quake-count" id="quakeCount">—</span>
+        </div>
+        <div class="quake-focus" id="quakeFocus"></div>
+        <div class="quake-list" id="quakeList"></div>
+      </aside>
+    </div>
+    <p class="quake-note">数据：中国地震台网（经 Wolfx 开放接口），备用 USGS。公开渠道为速报/转发，秒级预警以官方发布为准。</p>
+  </div>
+</section>
+
+<section class="warning-page" id="warningPage" aria-hidden="true">
+  <header class="warning-top">
+    <button class="warning-back" id="warningBack" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      功能中心
+    </button>
+    <div class="warning-title-wrap">
+      <span>华南五省 · 实时气象预警</span>
+      <h1>气象灾害预警信号一览</h1>
+    </div>
+    <div class="warning-top-meta">
+      <div class="warning-view-switch" role="group" aria-label="预警显示方式">
+        <button type="button" data-warning-view="escalator" class="active" aria-pressed="true" aria-label="切换到扶梯版">扶梯</button>
+        <button type="button" data-warning-view="classic" aria-pressed="false" aria-label="切换到传统版">传统</button>
+      </div>
+      <span class="warning-source"><i class="dot"></i><span id="warningSource">中央气象台</span></span>
+      <span class="warning-updated" id="warningUpdated">连接中…</span>
+      <button class="warning-refresh" id="warningRefresh" type="button">刷新</button>
+    </div>
+  </header>
+  <div class="warning-body">
+    <div class="warning-legend-bar">
+      <div class="warning-legend">
+        <span><i class="lv-blue"></i>Ⅳ级 · 一般</span>
+        <span><i class="lv-yellow"></i>Ⅲ级 · 较重</span>
+        <span><i class="lv-orange"></i>Ⅱ级 · 严重</span>
+        <span><i class="lv-red"></i>Ⅰ级 · 特别严重</span>
+      </div>
+      <div class="warning-summary"><b id="warningTotal">—</b><span>条生效</span><b id="warningTypes">—</b><span>类预警</span></div>
+    </div>
+    <div class="warning-grid" id="warningList" aria-live="polite">
+      <div class="warning-loading">正在读取全国预警…</div>
+    </div>
+    <p class="warning-note">数据：中央气象台 / 中国天气网 · 森林火险来自广东省气象局 · 公开预警信号自动汇总。按国家 14 类口径，五省常用 13 类；暴雪、沙尘暴及地方信号归入“其他”。详情以官方发布为准。</p>
+  </div>
+</section>
+
+<section class="warning-classic-page" id="warningClassicPage" aria-hidden="true">
+  <header class="wcv-top">
+    <button class="wcv-back" id="warningClassicBack" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7"/></svg>功能中心</button>
+    <div class="wcv-brand"><span>华南五省 · 实时气象预警</span><h1>气象灾害预警</h1></div>
+    <div class="wcv-top-right">
+      <div class="warning-view-switch" role="group" aria-label="预警显示方式">
+        <button type="button" data-warning-view="escalator" aria-pressed="false" aria-label="切换到扶梯版">扶梯</button>
+        <button type="button" data-warning-view="classic" class="active" aria-pressed="true" aria-label="切换到传统版">传统</button>
+      </div>
+      <span class="wcv-updated" id="warningClassicUpdated">连接中…</span>
+      <button class="wcv-refresh" id="warningClassicRefresh" type="button">刷新</button>
+    </div>
+  </header>
+  <div class="wcv-body">
+    <div class="wcv-left">
+      <section class="wcm-card" aria-label="预警等级地图">
+        <div class="wcm-head">
+          <label class="wcm-region">当前地域<select id="warningClassicProvince" aria-label="切换当前地域"></select></label>
+          <span class="wcm-map-meta" id="warningClassicSource">中央气象台 · 按城市最高等级着色</span>
+        </div>
+        <div id="warningClassicMap" class="wcm-map" aria-label="预警等级城市分布地图"></div>
+        <div class="wcm-empty" id="warningClassicMapEmpty" hidden>当前筛选条件下暂无预警城市</div>
+        <div class="wcm-legend" id="warningClassicLegend" aria-label="预警等级数量"></div>
+      </section>
+    </div>
+    <aside class="wcv-right" aria-label="预警信号分析图表">
+      <div class="wca-grid">
+        <section class="wca-card">
+          <header class="wca-head"><h3>预警等级分布</h3><span id="warningClassicLevelTotal">—</span></header>
+          <div class="wca-chart" id="warningClassicLevelChart" role="img" aria-label="预警等级分布环形图"></div>
+        </section>
+        <section class="wca-card">
+          <header class="wca-head"><h3>类型 TOP</h3><span id="warningClassicTypeTotal">—</span></header>
+          <div class="wca-chart" id="warningClassicTypeChart" role="img" aria-label="预警类型排行横向柱状图"></div>
+        </section>
+        <section class="wca-card">
+          <header class="wca-head"><h3>城市 TOP</h3><span id="warningClassicCityTotal">—</span></header>
+          <div class="wca-chart" id="warningClassicCityChart" role="img" aria-label="预警城市排行横向柱状图"></div>
+        </section>
+        <section class="wca-card">
+          <header class="wca-head"><h3 id="warningClassicTrendTitle">发布趋势</h3><span id="warningClassicTrendTotal">—</span></header>
+          <div class="wca-chart" id="warningClassicTrendChart" role="img" aria-label="预警发布趋势折线图"></div>
+        </section>
+      </div>
+    </aside>
+    <section class="wcd-card" aria-labelledby="wcdTitle">
+      <header class="wcd-head">
+        <div><span>预警大数据</span><h2 id="wcdTitle">筛选与明细</h2></div>
+        <b id="warningClassicCount">—</b>
+      </header>
+      <div class="wcd-filters">
+        <label>省份<select id="warningClassicProvinceRight" aria-label="按省份筛选"></select></label>
+        <label>地级市<select id="warningClassicCity" aria-label="按地级市筛选"></select></label>
+        <label>类型<select id="warningClassicType" aria-label="按预警类型筛选"></select></label>
+        <label>时间<select id="warningClassicTime" aria-label="按发布时间筛选"><option value="all">全部时间</option><option value="1h">最近 1 小时</option><option value="6h">最近 6 小时</option><option value="24h">最近 24 小时</option><option value="72h">最近 3 天</option></select></label>
+        <div class="wcd-colors" id="warningClassicColors" role="group" aria-label="按信号颜色筛选">
+          <button type="button" data-level="all" class="active" aria-pressed="true">全部</button>
+          <button type="button" data-level="red" aria-pressed="false"><i style="--c:#dc2626"></i>红色</button>
+          <button type="button" data-level="orange" aria-pressed="false"><i style="--c:#f97316"></i>橙色</button>
+          <button type="button" data-level="yellow" aria-pressed="false"><i style="--c:#eab308"></i>黄色</button>
+          <button type="button" data-level="blue" aria-pressed="false"><i style="--c:#3b82f6"></i>蓝色</button>
+          <button type="button" data-level="white" aria-pressed="false"><i style="--c:#e6f0f5"></i>白色</button>
+        </div>
+      </div>
+      <div class="wcd-list" id="warningClassicList" aria-live="polite"></div>
+      <nav class="wcd-pager" id="warningClassicPager" aria-label="预警明细分页"></nav>
+    </section>
+  </div>
+</section>
+
+<div class="warning-sheet" id="warningSheet" aria-hidden="true">
+  <div class="warning-sheet-backdrop" data-warning-close></div>
+  <div class="warning-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="warningSheetTitle">
+    <button class="warning-sheet-close" type="button" data-warning-close aria-label="关闭预警详情">×</button>
+    <div id="warningSheetBody"></div>
+  </div>
+</div>
+
+
+<section class="quake-detail-page" id="quakeDetailPage" aria-hidden="true">
+  <header class="quake-top quake-detail-top">
+    <button class="center-back" id="quakeDetailBack" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      地震信息
+    </button>
+    <div class="center-brand"><span>华南气象</span><b>震中详情</b></div>
+    <div class="quake-source"><i class="dot"></i><span id="qdSceneLabel">卫星地形 · 行政边界</span></div>
+  </header>
+  <div class="qd-body">
+    <div class="qd-map-card">
+      <div id="quakeDetailMap" class="qd-map"></div>
+      <div class="qd-layer-bar">
+        <div class="qd-base" id="qdBase">
+          <button type="button" data-base="sat" class="active">卫星</button>
+          <button type="button" data-base="vec">标准</button>
+        </div>
+        <label class="qd-check"><input type="checkbox" id="qdAdminToggle" checked /><span>行政边界</span></label>
+      </div>
+      <div class="qd-map-admin" id="qdMapAdmin" hidden></div>
+      <div class="qd-map-meta">震中圈 10 / 30 / 50 km</div>
+      <div class="qd-map-attribution">底图 © 高德地图 · 边界 © 阿里云 DataV</div>
+    </div>
+    <aside class="qd-info" id="qdInfo"><div class="quake-empty">正在加载震中信息…</div></aside>
+  </div>
+</section>
+
+<section class="typhoon-page" id="typhoonPage" aria-hidden="true">
+  <header class="tp-header">
+    <button class="tp-button tp-back" id="typhoonBack" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg>功能中心</button>
+    <div class="tp-brand"><span>华南气象 · 实时路径 · 中央气象台</span><h1>台风路径</h1></div>
+    <div class="tp-header-right"><span id="tpUpdated" role="status">等待更新</span><button class="tp-button" id="typhoonRefresh" type="button">刷新数据</button></div>
+  </header>
+  <div class="tp-workspace">
+    <aside class="tp-sidebar">
+      <div class="tp-selection">
+        <div class="tp-section-heading"><h2>台风档案</h2><span class="tp-live-dot" aria-hidden="true"></span></div>
+        <div class="tp-selectors"><label>年份<select id="tpYear" aria-label="选择台风年份"></select></label><label>台风<select id="tpStorm" aria-label="选择台风" disabled><option>读取中…</option></select></label></div>
+        <p class="tp-list-meta" id="tpListMeta" role="status">正在连接浙江省水利厅…</p>
+      </div>
+      <div class="tp-detail">
+        <div id="tpStormOverview" class="tp-storm-overview"><p class="tp-muted">选择台风后查看实况与预报。</p></div>
+        <section class="tp-observation" aria-labelledby="tpPointHeading">
+          <div class="tp-section-heading"><h2 id="tpPointHeading">最新实况</h2><time id="tpPointTime">—</time></div>
+          <div id="tpPointInfo"><p class="tp-muted">点击路径点或拖动时间轴，查看该时刻的数据。</p></div>
+        </section>
+        <section class="tp-layers" aria-labelledby="tpForecastHeading">
+          <div class="tp-section-heading"><h2 id="tpForecastHeading">预报与风圈</h2><span>虚线为预报</span></div>
+          <div class="tp-forecasters" id="tpForecastOptions"><span class="tp-muted">暂无预报</span></div>
+          <label class="tp-wind-toggle"><input type="checkbox" id="tpWindToggle" checked />显示所选实况点风圈</label>
+          <p class="tp-layer-note" id="tpForecastNote">预报路径可能调整，不代表确定的影响区域。</p>
+        </section>
+      </div>
+      <footer class="tp-source-note">实况与预报：<a href="https://typhoon.nmc.cn/web.html" target="_blank" rel="noopener noreferrer">中央气象台台风网</a> · 多机构预报与历史档案：<a href="https://typhoon.slt.zj.gov.cn/" target="_blank" rel="noopener noreferrer">浙江省水利厅</a> · 时间均为北京时间。<br />接口格式参考 <a href="https://github.com/shirok1/hass-zhejiang-typhoon" target="_blank" rel="noopener noreferrer">GitHub 公开项目</a>，本地每 5 分钟检查更新。<br />仅供信息查询，防灾行动请以气象、应急部门正式发布为准。</footer>
+    </aside>
+    <div class="tp-map-column">
+      <div class="tp-map-view">
+        <div id="typhoonMap" class="tp-map" aria-label="台风实况与预报路径地图"></div>
+        <div class="tp-map-controls"><div class="tp-base-switch" role="group" aria-label="地图底图"><button type="button" data-tp-base="vec" class="active" aria-pressed="true">标准</button><button type="button" data-tp-base="sat" aria-pressed="false">卫星</button></div><button type="button" class="tp-fit" id="tpFit">完整路径</button></div>
+        <div class="tp-map-message" id="tpMapMessage" role="status">正在读取台风数据…</div>
+        <p class="tp-tile-note" id="tpTileNote" hidden>底图暂时不可用，仍可查看台风路径与坐标。</p>
+        <div class="tp-legend" aria-label="台风强度图例"><span><i style="--c:#38bdf8"></i>热带低压</span><span><i style="--c:#22c55e"></i>热带风暴</span><span><i style="--c:#eab308"></i>强热带风暴</span><span><i style="--c:#f97316"></i>台风</span><span><i style="--c:#ef4444"></i>强台风</span><span><i style="--c:#c026d3"></i>超强台风</span></div>
+      </div>
+      <div class="tp-timeline"><button class="tp-button tp-play" id="tpPlay" type="button" disabled aria-label="播放历史路径">播放</button><div class="tp-timeline-track"><div><span id="tpTimelineTime">实况时间轴</span><span id="tpPointCount">0 / 0</span></div><input id="tpTimeline" type="range" min="0" max="0" value="0" step="1" disabled aria-label="选择实况时刻" /></div><button class="tp-button" id="tpLatest" type="button" disabled>最新点</button></div>
+    </div>
+  </div>
+</section>
+
+<aside class="rank-sheet" id="rankSheet" aria-hidden="true">
+  <div class="sheet-backdrop" data-close-rank></div>
+  <div class="rank-panel" role="dialog" aria-modal="true" aria-labelledby="rankSheetTitle">
+    <div class="sheet-topbar">
+      <button class="st-back" type="button" data-close-rank aria-label="返回地图">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        返回地图
+      </button>
+      <span class="st-badge">气象排行</span>
+      <span class="st-updated" id="rankUpdated"></span>
+    </div>
+    <div class="rank-panel-body">
+      <div class="rank-toolbar">
+        <h2 id="rankSheetTitle">五省城市排行</h2>
+        <div class="rank-scope" id="rankScope">
+          <button type="button" data-scope="city" class="active">69 城</button>
+          <button type="button" data-scope="station">全部站</button>
+        </div>
+      </div>
+      <div class="rank-chips rank-chips-sheet" id="rankChipsSheet" aria-label="按省份筛选"></div>
+      <div class="rank-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        <input id="rankSearch" type="search" placeholder="搜索城市或省份" autocomplete="off" />
+      </div>
+      <p class="rank-sheet-meta" id="rankSheetMeta"></p>
+      <ol class="rank-full" id="rankFull"></ol>
+    </div>
+  </div>
+</aside>
+
+<aside class="radar-sheet" id="radarSheet" aria-hidden="true">
+  <div class="sheet-backdrop" data-close-radar></div>
+  <div class="radar-panel" role="dialog" aria-modal="true" aria-labelledby="radarTitle">
+    <div class="sheet-topbar">
+      <button class="st-back" type="button" data-close-radar aria-label="返回地图">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        返回地图
+      </button>
+      <span class="st-badge">雷达拼图</span>
+      <span class="st-updated" id="radarUpdated">中央气象台</span>
+    </div>
+    <div class="radar-stage" id="radarStage">
+      <img id="radarImg" alt="雷达拼图" />
+      <div class="radar-badge" id="radarTime">—</div>
+      <div class="radar-modes" id="radarModes" role="group" aria-label="雷达范围">
+        <button type="button" data-mode="nation" class="active">五省全景</button>
+        <button type="button" data-mode="south">华南</button>
+        <button type="button" data-mode="huazhong">华中</button>
+        <button type="button" data-mode="huadong">华东</button>
+      </div>
+      <div class="radar-zoom" id="radarZoom" role="group" aria-label="缩放">
+        <button type="button" data-rzoom="in" aria-label="放大">+</button>
+        <button type="button" data-rzoom="out" aria-label="缩小">−</button>
+        <button type="button" data-rzoom="reset" aria-label="复位">⤢</button>
+      </div>
+      <div class="radar-dbz" id="radarDbz" aria-hidden="true">
+        <i></i>
+        <span>5 · 10 · 15 · 20 · 25 · 30 · 35 · 40 · 45 · 50 · 55 · 60 · 65 · 70 dBZ</span>
+      </div>
+      <div class="radar-loading" id="radarLoading"><span class="radar-spinner"></span><span id="radarProgress">正在加载雷达帧…</span></div>
+    </div>
+    <div class="radar-provs" id="radarProvs" aria-label="按省份切换雷达"><span class="label">省份</span><button type="button" data-prov="广东">广东</button><button type="button" data-prov="广西">广西</button><button type="button" data-prov="湖南">湖南</button><button type="button" data-prov="江西">江西</button><button type="button" data-prov="福建">福建</button></div>
+    <div class="radar-bar">
+      <button class="radar-play" id="radarPlay" type="button" aria-label="播放雷达动画">▶</button>
+      <input type="range" id="radarSlider" min="0" max="0" step="1" value="0" aria-label="雷达时间轴" />
+      <span class="radar-count" id="radarCount">0 / 0</span>
+    </div>
+    <p class="radar-note">中央气象台华南区域组合反射率拼图 · 每 6 分钟一帧 · 单位 dBZ · 含邻省缓冲</p>
+    <div class="radar-thumbs" id="radarThumbs" aria-label="雷达帧缩略图"></div>
+    <p class="radar-tip">回波由蓝到紫强度递增：绿黄为中等降水，红紫为强回波；点击缩略图可跳转时刻。手机可双指捏合缩放、单指拖动查看局部。</p>
+  </div>
+</aside>
+
+<aside class="sheet" id="sheet" aria-hidden="true">
+  <div class="sheet-backdrop" data-close-sheet></div>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-topbar">
+      <button class="st-back" type="button" data-close-sheet aria-label="返回地图">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        返回地图
+      </button>
+      <span class="st-badge">可视化气象台</span>
+      <span class="st-updated" id="stUpdated"></span>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+</aside>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/echarts.min.js"></script>
+<script src="data/mapdata.js"></script>
+<script src="data/snapshot.js"></script>
+<script src="warnings.js"></script>
+<script src="warnings-classic.js"></script>
+<script src="typhoons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
