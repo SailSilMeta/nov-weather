@@ -1,0 +1,25 @@
+{
+  "source": "https://www.smg.gov.mo/zh/subpage/28/page/26",
+  "note": "澳门地球物理气象局官方信号图标本地存档，2026-10-31 抓取自 cms.smg.gov.mo / www.smg.gov.mo；原站可能关闭，页面优先使用本地文件。",
+  "items": [
+    { "file": "typhoon-t1.gif", "name": "一号风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt1.gif" },
+    { "file": "typhoon-t3.gif", "name": "三号风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt3.gif" },
+    { "file": "typhoon-t8ne.gif", "name": "八号东北风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt8ne.gif" },
+    { "file": "typhoon-t8se.gif", "name": "八号东南风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt8se.gif" },
+    { "file": "typhoon-t8sw.gif", "name": "八号西南风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt8sw.gif" },
+    { "file": "typhoon-t8nw.gif", "name": "八号西北风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt8nw.gif" },
+    { "file": "typhoon-t9.gif", "name": "九号风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt9.gif" },
+    { "file": "typhoon-t10.gif", "name": "十号风球", "origin": "http://www.smg.gov.mo/icons/typhoon/dt10.gif" },
+    { "file": "rain-yellow.jpg", "name": "黄色暴雨警告信号", "origin": "https://cms.smg.gov.mo/uploads/tinymce/sitecontent/DM/yellowrain.jpg" },
+    { "file": "rain-red.jpg", "name": "红色暴雨警告信号", "origin": "https://cms.smg.gov.mo/uploads/tinymce/sitecontent/DM/redrain.jpg" },
+    { "file": "rain-black.jpg", "name": "黑色暴雨警告信号", "origin": "https://cms.smg.gov.mo/uploads/tinymce/sitecontent/DM/blackrain.jpg" },
+    { "file": "thunder.jpg", "name": "雷暴警告", "origin": "https://cms.smg.gov.mo/uploads/tinymce/sitecontent/CVM/雷暴警告.jpg" },
+    { "file": "surge-blue.gif", "name": "风暴潮警告（蓝色）", "origin": "https://cms.smg.gov.mo/uploads/image/severeWeather/images/ss_blue.gif" },
+    { "file": "surge-yellow.gif", "name": "风暴潮警告（黄色）", "origin": "https://cms.smg.gov.mo/uploads/image/severeWeather/images/ss_yellow.gif" },
+    { "file": "surge-orange.gif", "name": "风暴潮警告（橙色）", "origin": "https://cms.smg.gov.mo/uploads/image/severeWeather/images/ss_orange.gif" },
+    { "file": "surge-red.gif", "name": "风暴潮警告（红色）", "origin": "https://cms.smg.gov.mo/uploads/image/severeWeather/images/ss_red.gif" },
+    { "file": "surge-black.gif", "name": "风暴潮警告（黑色）", "origin": "https://cms.smg.gov.mo/uploads/image/severeWeather/images/ss_black.gif" },
+    { "file": "monsoon.gif", "name": "强烈季候风信号（黑球）", "origin": "https://cms.smg.gov.mo/uploads/old/smg/severeWeather/images/gif/monsoon/monsoon.gif" },
+    { "file": "monsoon-signal.gif", "name": "强烈季候风信号（竖版）", "origin": "https://cms.smg.gov.mo/uploads/old/smg/severeWeather/images/gif/monsoon/monsoon_signal.gif" }
+  ]
+}

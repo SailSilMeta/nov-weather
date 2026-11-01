@@ -8,6 +8,15 @@ const { SOURCE: TYPHOON_SOURCE, validKey: validTyphoonKey, validData: validTypho
 const { SOURCE: NMC_SOURCE, validKey: validNmcKey, validData: validNmcData,
   fetchNmc } = require('./nmc-typhoon');
 const { SOURCE: GD_FIRE_SOURCE, fetchGdFire } = require('./gd-fire');
+const gdNews = require('./gd-news');
+const dgRadar = require('./dg-radar');
+const zhRadar = require('./zh-radar');
+const fsRadar = require('./fs-radar');
+const jmRadar = require('./jm-radar');
+const gzRadar = require('./gz-radar');
+const moRadar = require('./mo-radar');
+const hkmoWarning = require('./hkmo-warning');
+const radarAuth = require('./radar-auth');
 
 const root = path.join(__dirname, '..');
 const port = Number(process.env.PORT || 5173);
@@ -311,6 +320,162 @@ async function handleGdFire(req, res) {
   sendApi(req, res, payload.alerts.length || payload.citiesTotal ? 200 : 502, payload);
 }
 
+function readJsonBody(req, limit = 2048) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        resolve(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+async function handleRadarAuth(verifyOnly, req, res) {
+  if (verifyOnly) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return sendApi(req, res, 405, { ok: false });
+    const header = String(req.headers.authorization || '');
+    const token = header.startsWith('Bearer ')
+      ? header.slice(7).trim()
+      : (new URL(req.url, 'http://localhost').searchParams.get('token') || '');
+    const granted = radarAuth.check(token);
+    return sendApi(req, res, granted ? 200 : 401, granted ? { ok: true, exp: granted.exp } : { ok: false });
+  }
+  if (req.method !== 'POST') return sendApi(req, res, 405, { ok: false });
+  const body = await readJsonBody(req);
+  if (!body || typeof body.pass !== 'string') return sendApi(req, res, 400, { ok: false });
+  if (!radarAuth.matches(body.pass)) return sendApi(req, res, 401, { ok: false });
+  const { token, exp } = radarAuth.issue();
+  sendApi(req, res, 200, { ok: true, token, exp });
+}
+
+const newsIndex = { items: [], at: 0 };
+const newsPending = { current: null };
+const newsTTL = 10 * 60e3;
+
+function newsPayload(page, index, extra = {}) {
+  return {
+    source: gdNews.SOURCE,
+    fetchedAt: index.at ? new Date(index.at).toISOString() : new Date().toISOString(),
+    stale: !index.at || Date.now() - index.at >= newsTTL,
+    page,
+    pageSize: gdNews.PAGE_SIZE,
+    total: index.items.length,
+    totalPages: index.items.length ? Math.ceil(index.items.length / gdNews.PAGE_SIZE) : 0,
+    items: [],
+    ...extra,
+  };
+}
+
+async function loadGdNewsIndex() {
+  if (newsIndex.items.length && Date.now() - newsIndex.at < newsTTL) return;
+  try {
+    const items = await gdNews.fetchIndex();
+    newsIndex.items = items;
+    newsIndex.at = Date.now();
+  } catch (e) {
+    /* Keep the previous index; an empty index means the source is unreachable. */
+  }
+}
+
+async function handleGdNews(page, req, res) {
+  if (!newsPending.current) {
+    newsPending.current = loadGdNewsIndex().finally(() => { newsPending.current = null; });
+  }
+  await newsPending.current;
+  if (!newsIndex.items.length) return sendApi(req, res, 502, newsPayload(page, newsIndex));
+  const totalPages = Math.ceil(newsIndex.items.length / gdNews.PAGE_SIZE);
+  if (page > totalPages) return sendApi(req, res, 404, newsPayload(page, newsIndex));
+  const start = (page - 1) * gdNews.PAGE_SIZE;
+  const items = newsIndex.items.slice(start, start + gdNews.PAGE_SIZE);
+  sendApi(req, res, 200, newsPayload(page, newsIndex, { items }));
+}
+
+async function handleDgRadarImg(type, file, req, res) {
+  const target = await dgRadar.getFrameFile(type, file);
+  const buf = await fs.promises.readFile(target);
+  const png = /\.png$/i.test(file);
+  res.writeHead(200, {
+    'Content-Type': png ? 'image/png' : 'image/jpeg',
+    'Content-Length': buf.length,
+    'Cache-Control': /\d{12,14}/.test(file) ? 'public, max-age=604800, immutable' : 'public, max-age=60',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+async function handleZhRadarImg(file, req, res) {
+  const target = await zhRadar.getFrameFile(file);
+  const buf = await fs.promises.readFile(target);
+  res.writeHead(200, {
+    'Content-Type': 'image/gif',
+    'Content-Length': buf.length,
+    'Cache-Control': /\d{12,14}/.test(file) ? 'public, max-age=604800, immutable' : 'public, max-age=60',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+async function handleFsRadarImg(file, req, res) {
+  const target = await fsRadar.getFrameFile(file);
+  const buf = await fs.promises.readFile(target);
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': buf.length,
+    'Cache-Control': /\d{8}\.\d{6}/.test(file) ? 'public, max-age=604800, immutable' : 'public, max-age=60',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+async function handleJmRadarImg(type, file, req, res) {
+  const buf = await jmRadar.getFrame(type, file);
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': buf.length,
+    'Cache-Control': 'public, max-age=45',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+async function handleGzRadarImg(file, req, res) {
+  const target = await gzRadar.getFrameFile(file);
+  const buf = await fs.promises.readFile(target);
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': buf.length,
+    'Cache-Control': /\d{14}/.test(file) ? 'public, max-age=604800, immutable' : 'public, max-age=60',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
+async function handleMoRadarImg(type, file, req, res) {
+  const buf = await moRadar.getFrame(type, file);
+  const png = /\.png$/i.test(file);
+  res.writeHead(200, {
+    'Content-Type': png ? 'image/png' : 'image/jpeg',
+    'Content-Length': buf.length,
+    'Cache-Control': 'public, max-age=45',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(req.method === 'HEAD' ? undefined : buf);
+}
+
 function notFound(res) {
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('not found');
@@ -337,7 +502,21 @@ function lanAddresses() {
   return result;
 }
 
+function bearerToken(req) {
+  const raw = String(req.headers.authorization || '');
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
 const server = http.createServer(async (req, res) => {
+  const apiPath = (req.url || '').split('?')[0];
+  if (apiPath === '/api/radar/auth' || apiPath === '/api/radar/auth/verify') {
+    try {
+      return await handleRadarAuth(apiPath.endsWith('/verify'), req, res);
+    } catch (e) {
+      return sendApi(req, res, 500, { ok: false });
+    }
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     if (isNmcPath(req.url.split('?')[0])) return sendApi(req, res, 405, nmcPayload());
     if (isTyphoonPath(req.url.split('?')[0])) return sendTyphoon(req, res, 405);
@@ -376,6 +555,141 @@ const server = http.createServer(async (req, res) => {
       return await handleGdFire(req, res);
     } catch (e) {
       return sendApi(req, res, 502, gdFirePayload());
+    }
+  }
+  if (pathname === '/api/gd-news') {
+    const page = Number(new URL(req.url, 'http://localhost').searchParams.get('page') || 1);
+    if (!Number.isInteger(page) || page < 1 || page > 50) return sendApi(req, res, 404, newsPayload(1, newsIndex));
+    try {
+      return await handleGdNews(page, req, res);
+    } catch (e) {
+      return sendApi(req, res, 502, newsPayload(page, newsIndex));
+    }
+  }
+  if (pathname === '/api/dg-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await dgRadar.getProducts(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: dgRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/dg-radar/img') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const type = params.get('type') || '';
+    const file = params.get('file') || '';
+    if (!dgRadar.validKey(type) || !dgRadar.validFile(file)) return notFound(res);
+    try {
+      return await handleDgRadarImg(type, file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+  }
+  if (pathname === '/api/zh-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await zhRadar.getProduct(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: zhRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/zh-radar/img') {
+    const file = new URL(req.url, 'http://localhost').searchParams.get('file') || '';
+    if (!zhRadar.validFile(file)) return notFound(res);
+    try {
+      return await handleZhRadarImg(file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+  }
+  if (pathname === '/api/fs-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await fsRadar.getProduct(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: fsRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/fs-radar/img') {
+    const file = new URL(req.url, 'http://localhost').searchParams.get('file') || '';
+    if (!fsRadar.validFile(file)) return notFound(res);
+    try {
+      return await handleFsRadarImg(file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+  }
+  if (pathname === '/api/jm-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await jmRadar.getProducts(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: jmRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/jm-radar/img') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const type = params.get('type') || '';
+    const file = params.get('file') || '';
+    if (!jmRadar.validFile(type, file)) return notFound(res);
+    try {
+      return await handleJmRadarImg(type, file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+  }
+  if (pathname === '/api/gz-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await gzRadar.getProduct(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: gzRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/gz-radar/img') {
+    const file = new URL(req.url, 'http://localhost').searchParams.get('file') || '';
+    if (!gzRadar.validFile(file)) return notFound(res);
+    try {
+      return await handleGzRadarImg(file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+  }
+  if (pathname === '/api/mo-radar') {
+    const fresh = new URL(req.url, 'http://localhost').searchParams.get('fresh') === '1';
+    try {
+      return sendApi(req, res, 200, await moRadar.getProducts(fresh));
+    } catch (e) {
+      return sendApi(req, res, 502, { source: moRadar.BASE, products: [] });
+    }
+  }
+  if (pathname === '/api/warning-hkmo') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    if (params.get('mock') === '1') {
+      if (!radarAuth.check(bearerToken(req))) return sendApi(req, res, 401, { regions: [] });
+      return sendApi(req, res, 200, hkmoWarning.mockWarnings());
+    }
+    try {
+      return sendApi(req, res, 200, await hkmoWarning.getWarnings(params.get('fresh') === '1'));
+    } catch (e) {
+      return sendApi(req, res, 502, { regions: [] });
+    }
+  }
+  if (pathname === '/api/mo-radar/img') {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const type = params.get('type') || '';
+    const file = params.get('file') || '';
+    if (!moRadar.validFile(type, file)) return notFound(res);
+    try {
+      return await handleMoRadarImg(type, file, req, res);
+    } catch (e) {
+      res.writeHead(502, { 'Cache-Control': 'no-store' });
+      return res.end();
     }
   }
   if (isNmcPath(pathname)) {

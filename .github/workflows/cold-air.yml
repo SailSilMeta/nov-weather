@@ -1,0 +1,36 @@
+name: Refresh cold air tracking
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cold-air-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Fetch cold air snapshot
+        run: node scripts/fetch-cold-air.js
+      - name: Commit snapshot
+        run: |
+          if [ -z "$(git status --porcelain data/cold-air.js)" ]; then
+            echo "No cold air changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cold-air.js
+          git commit -m "chore: refresh cold air tracking"
+          git pull --rebase --autostash || true
+          git push

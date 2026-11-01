@@ -93,6 +93,7 @@
     sheetProvince: 'all',
     sheetCity: 'all',
     sheetLevel: 'all',
+    hkmo: null,
   };
   const pageEl = $('#warningPage');
   const listEl = $('#warningList');
@@ -654,6 +655,114 @@
     return gd.alerts.map((row) => normalizeGdFire(row, gd.mode)).filter(Boolean);
   }
 
+  const HKMO_API = 'api/warning-hkmo';
+  const HKMO_MOCK = new URLSearchParams(location.search).get('hkmoMock') === '1';
+
+  function readRadarToken() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('qxksh.radarToken') || 'null');
+      if (saved && typeof saved.token === 'string' && Number(saved.exp) > Date.now()) return saved.token;
+    } catch (e) {
+      /* ignore */
+    }
+    return '';
+  }
+  const hkmoEl = $('#hkmoWarnings');
+  const hkmoState = { at: 0, loading: false };
+
+  function chipTone(value) {
+    const hex = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '';
+    if (!hex) return '#64748b';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return lum < 0.32 ? '#9ca3af' : hex;
+  }
+
+  function renderHkMo(data) {
+    if (!hkmoEl) return;
+    const regions = Array.isArray(data && data.regions) ? data.regions : [];
+    if (!regions.length) {
+      hkmoEl.hidden = true;
+      hkmoEl.innerHTML = '';
+      return;
+    }
+    const mockNote = data.mock ? '<div class="hkmo-mock">模拟数据 · 仅用于测试港澳信号展示</div>' : '';
+    hkmoEl.innerHTML = mockNote + regions.map((region) => {
+      const extra = (state.testSignals || []).filter((sig) => sig.regionKey === region.key);
+      const hideMock = Boolean(data && data.mock && state.mockHidden);
+      const base = hideMock ? [] : (Array.isArray(region.items) ? region.items : []);
+      const items = [...base, ...extra];
+      const chips = items.map((item) => {
+        const tone = chipTone(item.tone);
+        return `<span class="hkmo-chip" style="--tone:${tone}" title="${esc(item.name)}">${esc(item.name)}${item.clock ? `<small>${esc(item.clock)}</small>` : ''}</span>`;
+      }).join('');
+      return `<article class="hkmo-card${region.error ? ' is-error' : ''}">
+        <header class="hkmo-head">
+          <b>${esc(region.name)}</b>
+          <span class="hkmo-source">${esc(region.source)}</span>
+          ${region.updatedAt ? `<span class="hkmo-time">更新 ${esc(region.updatedAt)}</span>` : ''}
+        </header>
+        <div class="hkmo-list">${items.length ? chips : `<span class="hkmo-empty${region.error ? ' is-error' : ''}">${region.error ? '数据暂时不可用' : '现时没有预警'}</span>`}</div>
+        <a class="hkmo-link" href="${esc(region.url)}" target="_blank" rel="noopener noreferrer">官方页面 →</a>
+      </article>`;
+    }).join('');
+    hkmoEl.hidden = false;
+  }
+
+  async function loadHkMo(force) {
+    if (!hkmoEl || hkmoState.loading) return;
+    if (!force && !HKMO_MOCK && hkmoState.at && Date.now() - hkmoState.at < 4 * 60e3) return;
+    hkmoState.loading = true;
+    try {
+      const token = HKMO_MOCK ? readRadarToken() : '';
+      const useMock = Boolean(token);
+      const query = useMock ? '?mock=1' : force ? '?fresh=1' : '';
+      const headers = useMock ? { Authorization: `Bearer ${token}` } : undefined;
+      const res = await fetch(`${HKMO_API}${query}`, { cache: 'no-store', headers });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) throw new Error('hkmo');
+      hkmoState.at = Date.now();
+      state.hkmo = data;
+      renderHkMo(data);
+      window.dispatchEvent(new CustomEvent('warning:hkmo', { detail: data }));
+    } catch (e) {
+      if (!hkmoState.at) {
+        renderHkMo({
+          regions: [
+            { key: 'hk', name: '香港', source: '香港天文台', url: 'https://www.hko.gov.hk/sc/wxinfo/dailywx/wxwarntoday.htm', error: true, items: [] },
+            { key: 'mo', name: '澳门', source: '澳门地球物理气象局', url: 'https://www.dsmg.gov.mo/zh-hant/zawarning', error: true, items: [] },
+          ],
+        });
+      }
+    } finally {
+      hkmoState.loading = false;
+    }
+  }
+
+  function mergeTestData() {
+    state.alerts = dedupe((state.alerts || []).filter((alert) => alert.source !== 'test').concat(state.testAlerts || []));
+    state.groups = groupAlerts(state.alerts);
+    render();
+  }
+
+  function setTestAlerts(list) {
+    state.testAlerts = Array.isArray(list) ? list.slice() : [];
+    mergeTestData();
+  }
+
+  function setTestSignals(list) {
+    state.testSignals = Array.isArray(list) ? list.slice() : [];
+    if (state.hkmo) renderHkMo(state.hkmo);
+    window.dispatchEvent(new CustomEvent('warning:hkmo', { detail: state.hkmo }));
+  }
+
+  function setMockHidden(flag) {
+    state.mockHidden = Boolean(flag);
+    if (state.hkmo) renderHkMo(state.hkmo);
+  }
+
   async function loadAlerts(force) {
     if (state.loading) return;
     if (!force && state.lastLoad && Date.now() - state.lastLoad < 90e3) return;
@@ -668,7 +777,7 @@
       const rest = await Promise.all(Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => fetchNmcPage(i + 2).catch(() => null)));
       if (seq !== state.seq) return;
       const raw = [first, ...rest.filter(Boolean)].flatMap((p) => p.list || []);
-      state.alerts = dedupe(raw.map((item) => normalizeAlert(item, 'live')).filter(Boolean));
+      state.alerts = dedupe(raw.map((item) => normalizeAlert(item, 'live')).filter(Boolean).concat(state.testAlerts || []));
       state.source = '中央气象台';
       state.updatedAt = Date.now();
       state.groups = groupAlerts(state.alerts);
@@ -691,7 +800,7 @@
       if (seq !== state.seq) return;
       const extra = gdFireAlerts(gd);
       if (snapshot && snapshot.alerts && snapshot.alerts.length) {
-        state.alerts = dedupe([...snapshot.alerts.map((item) => normalizeAlert(item, 'snapshot')).filter(Boolean), ...extra]);
+        state.alerts = dedupe([...snapshot.alerts.map((item) => normalizeAlert(item, 'snapshot')).filter(Boolean), ...extra, ...(state.testAlerts || [])]);
         state.source = extra.length ? '中国天气网快照 / 广东省气象局' : '中国天气网快照';
         state.updatedAt = Math.max(state.snapshotAt || Date.now(), gd ? gd.fetchedAt || 0 : 0);
         state.groups = groupAlerts(state.alerts);
@@ -846,8 +955,12 @@
     pageEl.setAttribute('aria-hidden', 'false');
     document.body.classList.add('warning-open');
     loadAlerts(false);
+    loadHkMo(false);
     clearInterval(state.timer);
-    state.timer = setInterval(() => loadAlerts(true), 5 * 60e3);
+    state.timer = setInterval(() => {
+      loadAlerts(true);
+      loadHkMo(true);
+    }, 5 * 60e3);
   }
 
   function close() {
@@ -865,7 +978,10 @@
     $('#warningBack').addEventListener('click', () => {
       location.hash = '#/center';
     });
-    $('#warningRefresh').addEventListener('click', () => loadAlerts(true));
+    $('#warningRefresh').addEventListener('click', () => {
+      loadAlerts(true);
+      loadHkMo(true);
+    });
     listEl.addEventListener('change', (event) => {
       const select = event.target.closest('[data-type-filter]');
       if (select) applyCardFilter(select.dataset.typeFilter, select.value);
@@ -1005,5 +1121,5 @@
   }
 
   bind();
-  window.WarningPage = { open, close, load: loadAlerts, ensureData: loadAlerts, state, openSheet, openTypeSheet, closeSheet, iconSvg, constants: { PROVINCES, PROVINCE_SHORT }, utils: { pagerHtml, listPageSize, clampPage } };
+  window.WarningPage = { open, close, load: loadAlerts, ensureData: loadAlerts, loadHkMo, setTestAlerts, setTestSignals, setMockHidden, state, openSheet, openTypeSheet, closeSheet, iconSvg, constants: { PROVINCES, PROVINCE_SHORT, TYPES: TYPE_DEFS, LEVELS }, utils: { pagerHtml, listPageSize, clampPage } };
 })();

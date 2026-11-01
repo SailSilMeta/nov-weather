@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#eef6fa" />
-<title>华南五省气象图 · 粤湘桂赣闽</title>
+<title>风雨溯元・Nov Weather</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23ffffff'/%3E%3Ccircle cx='16' cy='14' r='6' fill='%23f7b955'/%3E%3Cpath d='M9 24h14a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 10.4 15.3 4 4 0 0 0 9 24Z' fill='%23cfe0ea'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
 <link rel="stylesheet" href="styles.css" />
@@ -17,7 +17,7 @@
         <svg viewBox="0 0 32 32"><circle cx="16" cy="13.5" r="5.8" fill="#f7b955"/><path d="M8.6 23.5h14.2a4.4 4.4 0 0 0 .6-8.76A6.4 6.4 0 0 0 10.2 15 3.9 3.9 0 0 0 8.6 23.5Z" fill="#d5e5ef"/></svg>
       </span>
       <div class="brand-text">
-        <strong>华南气象</strong>
+        <strong>风雨溯元</strong>
         <span>粤 · 湘 · 桂 · 赣 · 闽</span>
       </div>
     </div>
@@ -40,7 +40,6 @@
   <main class="stage" id="stage">
     <div class="map-wrap" id="mapWrap">
       <div class="map-title">
-        <p class="kicker">华南五省</p>
         <h1 id="mapMetric">实时气温</h1>
         <p class="meta">
           <span id="mapTime">—</span>
@@ -86,6 +85,105 @@
 
   <section class="overview" id="overview" aria-label="五省概览"></section>
 
+  <section class="home-feed" id="homeFeed" aria-label="更多气象模块">
+    <header class="feed-head">
+      <div class="feed-title">
+        <p class="kicker">更多模块</p>
+        <h2>气象数据面板</h2>
+      </div>
+      <p class="feed-note">模块陆续接入 · 卡片内容可直接填充</p>
+    </header>
+
+    <div class="feed-grid">
+      <article class="feed-card feed-card--lg" id="feedColdAir" aria-label="冷空气过程实况追踪">
+        <header class="feed-card-head">
+          <div>
+            <span class="kicker">冷空气</span>
+            <h3>冷空气过程实况追踪</h3>
+          </div>
+          <span class="feed-chip" id="coldChip">监测中</span>
+        </header>
+        <p class="feed-meta" id="coldMeta">南岭四站 0/4 达标 · 等待冷空气主体南下</p>
+        <div class="cold-strip" id="coldStrip" aria-label="冷空气知识提示">
+          <span class="cold-strip-tag" id="coldStripTag">冷知识</span>
+          <div class="cold-strip-view" id="coldStripView"></div>
+        </div>
+        <div class="cold-map-wrap">
+          <div class="feed-map" id="feedColdAirMap" aria-label="广东省市界冷空气实况图"></div>
+          <div class="cold-empty" id="coldEmpty" aria-hidden="true">
+            <strong>当前暂无冷空气过程</strong>
+          </div>
+          <div class="cold-legend" id="coldLegend"></div>
+          <div class="cold-clock" id="coldClock">--</div>
+          <button class="cold-download" id="coldDownload" type="button" aria-label="下载冷空气实况图" title="下载冷空气实况图">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="m7.7 10.6 4.3 4.3 4.3-4.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </article>
+
+      <div class="feed-side">
+      <article class="feed-card feed-card--cities" id="feedColdCities" aria-label="城市冷空气实况">
+        <header class="feed-card-head">
+          <div>
+            <span class="kicker">影响</span>
+            <h3>城市冷空气实况</h3>
+          </div>
+          <span class="feed-chip" id="coldCitiesChip">监测中</span>
+        </header>
+        <div class="cold-city-tabs" id="coldCityTabs" role="tablist" aria-label="按区域筛选"></div>
+        <p class="cold-city-meta" id="coldCityMeta">—</p>
+        <div class="cold-city-list" id="coldCityList" tabindex="0" aria-label="城市实况列表，可上下滚动"></div>
+        <p class="cold-city-note">已抵达按过程累计降温 · 未抵达按近 3 小时变化</p>
+      </article>
+      </div>
+
+      <article class="feed-card feed-card--md" id="feedRadar" aria-label="雷达回波">
+        <header class="feed-card-head">
+          <div>
+            <span class="kicker">实况观测</span>
+            <h3>雷达回波拼图</h3>
+          </div>
+          <span class="feed-chip">待接入</span>
+        </header>
+        <div class="feed-slot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 12l6-4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>
+          <b>雷达帧序列预留</b>
+          <span>可放拼图、时间轴与播放控制</span>
+        </div>
+      </article>
+
+      <article class="feed-card feed-card--md" id="feedTyphoon" aria-label="台风路径">
+        <header class="feed-card-head">
+          <div>
+            <span class="kicker">台风</span>
+            <h3>台风路径追踪</h3>
+          </div>
+          <span class="feed-chip">待接入</span>
+        </header>
+        <div class="feed-slot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.4c3.4 0 5.6 2.7 5.6 6.1 0 4.2-4 6.4-5.6 11.1-1.6-4.7-5.6-6.9-5.6-11.1 0-3.4 2.2-6.1 5.6-6.1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="9.4" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+          <b>路径与强度预留</b>
+          <span>可放路径线、风圈与预报点</span>
+        </div>
+      </article>
+
+      <article class="feed-card feed-card--md" id="feedTrend" aria-label="气温趋势">
+        <header class="feed-card-head">
+          <div>
+            <span class="kicker">预报</span>
+            <h3>未来气温趋势</h3>
+          </div>
+          <span class="feed-chip">待接入</span>
+        </header>
+        <div class="feed-slot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5 9 11l3.4 3.2L20 6.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.4 6.5H20v4.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <b>折线趋势预留</b>
+          <span>可放逐时曲线与省界对比</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
   <footer class="foot">
     <span>数据：中央气象台（nmc.cn）站点实况与预报</span>
     <span>边界：DataV.GeoAtlas</span>
@@ -99,7 +197,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       返回地图
     </button>
-    <div class="center-brand"><span>华南气象</span><b>功能中心</b></div>
+    <div class="center-brand"><span>风雨溯元</span><b>功能中心</b></div>
     <label class="center-search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
       <input id="centerSearch" type="search" placeholder="搜索功能，如地震、台风" autocomplete="off" />
@@ -109,15 +207,81 @@
     <div class="center-hero">
       <p class="kicker">查询工具</p>
       <h1>功能中心</h1>
-      <p>地震、预警、台风等查询入口，按类别逐步接入；地图与雷达仍在首页。</p>
+      <p>地震、预警、台风、雷达等查询入口，按类别逐步接入。</p>
     </div>
     <div class="center-chips" id="centerChips" role="group" aria-label="功能分类">
       <button type="button" data-cat="all" class="active">全部</button>
       <button type="button" data-cat="灾害与预警">灾害与预警</button>
+      <button type="button" data-cat="实况观测">实况观测</button>
       <button type="button" data-cat="fav">★ 收藏</button>
     </div>
     <div class="center-grid" id="centerGrid"></div>
     <p class="center-foot">更多查询功能将陆续接入 · 点击 ☆ 可收藏</p>
+  </div>
+</section>
+
+<section class="radar-page" id="radarPage" aria-hidden="true">
+  <div class="radar-gate" id="radarGate" hidden>
+    <form class="radar-gate-card" id="radarGateForm" autocomplete="off">
+      <span class="radar-gate-lock" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="4.5" y="10" width="15" height="10" rx="2.6" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7.8a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14.6" r="1.5" fill="currentColor"/></svg>
+      </span>
+      <h2>访问受保护</h2>
+      <p>该页面需要访问密码，验证通过后本次会话内有效。</p>
+      <div class="radar-gate-field">
+        <input id="radarPass" type="password" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="输入访问密码" aria-label="访问密码" />
+        <button type="submit" id="radarGateSubmit">进入</button>
+      </div>
+      <p class="radar-gate-msg" id="radarGateMsg" role="status" aria-live="polite"></p>
+    </form>
+  </div>
+
+  <div class="radar-shell" id="radarContent" hidden>
+    <section class="radar-pane radar-news">
+      <header class="radar-pane-head">
+        <button class="radar-back" id="radarBack" type="button" aria-label="返回功能中心">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="radar-crumb"><span>资讯</span><i>›</i><b>气象资讯</b></span>
+        <a class="radar-source" href="https://www.gd121.cn/zx/qxzx/list.shtml" target="_blank" rel="noopener noreferrer">广东省气象局</a>
+      </header>
+      <div class="radar-news-list" id="radarNewsList"></div>
+      <nav class="radar-pager" id="radarPager" aria-label="资讯分页"></nav>
+    </section>
+
+    <section class="radar-pane radar-board">
+      <header class="radar-board-head">
+        <span class="radar-board-title">雷达回波</span>
+        <span class="radar-board-meta" id="radarMeta">东莞气象台 · 最近 30 帧</span>
+        <button class="radar-board-refresh" id="radarRefresh" type="button" aria-label="刷新雷达">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M20 4.6V9.2h-4.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </header>
+      <div class="radar-grid" id="radarGrid"></div>
+    </section>
+  </div>
+
+  <div class="radar-viewer" id="radarViewer" hidden>
+    <header class="radar-viewer-head">
+      <span class="radar-viewer-name" id="radarViewerName">雷达图</span>
+      <span class="radar-viewer-time" id="radarViewerTime">—</span>
+      <button class="radar-viewer-close" id="radarViewerClose" type="button" aria-label="关闭全屏">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="radar-viewer-stage" id="radarViewerStage">
+      <button class="radar-viewer-step prev" id="radarViewerPrev" type="button" aria-label="上一帧">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <img id="radarViewerImg" alt="" />
+      <button class="radar-viewer-step next" id="radarViewerNext" type="button" aria-label="下一帧">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5l6.7 7-6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <footer class="radar-viewer-foot">
+      <button class="radar-viewer-play" id="radarViewerPlay" type="button">播放</button>
+      <div class="radar-viewer-dots" id="radarViewerDots"><div class="radar-viewer-track" id="radarViewerTrack"></div></div>
+    </footer>
   </div>
 </section>
 
@@ -127,7 +291,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       功能中心
     </button>
-    <div class="center-brand"><span>华南气象</span><b>地震信息</b></div>
+    <div class="center-brand"><span>风雨溯元</span><b>地震信息</b></div>
     <div class="quake-source"><i class="dot"></i><span id="quakeSource">中国地震台网</span><span id="quakeUpdated">连接中…</span></div>
     <button class="quake-refresh" id="quakeRefresh" type="button">刷新</button>
   </header>
@@ -171,6 +335,82 @@
   </div>
 </section>
 
+<section class="typhoon-pro-page" id="typhoonProPage" aria-hidden="true">
+  <div id="typhoonProMap" class="tpp-map" aria-label="台风专业版世界地图"></div>
+  <aside class="tpp-panel" id="tppPanel" aria-label="台风信息">
+    <header class="tpp-head">
+      <h1 class="tpp-title"><b id="tppNumber">—</b><span id="tppName">—</span><em id="tppEnname"></em></h1>
+      <p class="tpp-time" id="tppTime">实况日期：—（BJT）</p>
+    </header>
+    <div class="tpp-fields">
+      <div class="tpp-field"><span>中心位置</span><b id="tppPos">—</b></div>
+      <div class="tpp-field"><span>强度等级</span><b id="tppStrong">—</b></div>
+      <div class="tpp-field"><span>中心附近最大风速</span><b id="tppSpeed">—</b></div>
+      <div class="tpp-field"><span>中心最低气压</span><b id="tppPressure">—</b></div>
+      <div class="tpp-field"><span>移动方向</span><b id="tppDirection">—</b></div>
+      <div class="tpp-field"><span>移动速度</span><b id="tppMove">—</b></div>
+    </div>
+    <p class="tpp-source" id="tppSource">实况信息来源：中央气象台</p>
+  </aside>
+  <button class="tpp-panel-toggle" id="tppPanelToggle" type="button" aria-label="收起信息栏" aria-expanded="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+  </button>
+  <div class="tpp-tools" id="tppTools" role="group" aria-label="地图工具">
+    <p class="tpp-tools-title">工具栏</p>
+    <button type="button" class="tpp-tool" id="tppGrid" aria-pressed="false" aria-label="显示/隐藏鼠标经纬度" data-tip="显示/隐藏鼠标经纬度">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="m13 13 6 6"/></svg>
+    </button>
+    <button type="button" class="tpp-tool" id="tppMeasure" aria-pressed="false" aria-label="测量距离" data-tip="测距">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.4" cy="17.6" r="1.7"/><circle cx="17.6" cy="6.4" r="1.7"/><path d="M7.7 16.3 16.3 7.7"/></svg>
+    </button>
+    <button type="button" class="tpp-tools-hide" id="tppToolsHide" aria-label="隐藏工具栏" title="隐藏工具栏">
+      <span>隐藏</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+    </button>
+  </div>
+  <button type="button" class="tpp-tools-tab" id="tppToolsTab" hidden aria-label="显示工具栏">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>
+  </button>
+  <p class="tpp-measure-info" id="tppMeasureInfo" hidden></p>
+  <div class="tpp-coord" id="tppCoord" hidden>
+    <p id="tppCoordText">经度：—，纬度：—</p>
+    <span id="tppCoordHint">按 C 复制当前经纬度到剪贴板</span>
+  </div>
+  <div class="tpp-wind-legend" id="tppWindLegend" hidden aria-label="风圈图例">
+    <span><i style="--c:#f0e000"></i>7级风圈</span>
+    <span><i style="--c:#ff4d4d"></i>10级风圈</span>
+    <span><i style="--c:#d35cff"></i>12级风圈</span>
+  </div>
+  <div class="tpp-legend" aria-hidden="true">
+    <span><i style="--c:#38bdf8"></i>热带低压</span>
+    <span><i style="--c:#22c55e"></i>热带风暴</span>
+    <span><i style="--c:#eab308"></i>强热带风暴</span>
+    <span><i style="--c:#f97316"></i>台风</span>
+    <span><i style="--c:#ef4444"></i>强台风</span>
+    <span><i style="--c:#c026d3"></i>超强台风</span>
+  </div>
+  <div class="tpp-actions" role="group" aria-label="页面工具">
+    <button class="tpp-action" id="tppBase" type="button" aria-label="切换卫星底图" data-tip="卫星底图">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 8 4.5-8 4.5-8-4.5L12 4Z"/><path d="m4 13 8 4.5 8-4.5"/></svg>
+    </button>
+    <button class="tpp-action" id="tppTheme" type="button" aria-label="切换地图主题" data-tip="切换地图主题"></button>
+    <button class="tpp-action" id="tppNotes" type="button" aria-label="注意事项" data-tip="注意事项">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10.8v5.4"/><circle cx="12" cy="7.6" r="1" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button class="tpp-action" id="tppOptions" type="button" aria-label="台风选项" data-tip="台风选项">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.2"/><path d="M12 3.4c4.6 0 8.4 3.7 8.4 8.4M12 20.6c-4.6 0-8.4-3.7-8.4-8.4"/><path d="M7.6 7.6c2.5-2.5 6.4-2.1 8.4.4M16.4 16.4c-2.5 2.5-6.4 2.1-8.4-.4"/></svg>
+    </button>
+  </div>
+  <section class="tpp-card" id="tppCard" hidden aria-label="台风选项">
+    <header class="tpp-card-head">
+      <h2 id="tppCardTitle">台风选项</h2>
+      <button type="button" class="tpp-card-close" id="tppCardClose" aria-label="关闭">×</button>
+    </header>
+    <div class="tpp-card-body" id="tppCardBody"></div>
+  </section>
+  <a class="tpp-back" href="#/typhoon">返回普通版</a>
+  <p class="tpp-message" id="tppMessage" role="status">正在读取台风数据…</p>
+</section>
+
 <section class="warning-page" id="warningPage" aria-hidden="true">
   <header class="warning-top">
     <button class="warning-back" id="warningBack" type="button">
@@ -178,7 +418,7 @@
       功能中心
     </button>
     <div class="warning-title-wrap">
-      <span>华南五省 · 实时气象预警</span>
+      <span>风雨溯元 · 实时气象预警</span>
       <h1>气象灾害预警信号一览</h1>
     </div>
     <div class="warning-top-meta">
@@ -192,6 +432,7 @@
     </div>
   </header>
   <div class="warning-body">
+    <div class="hkmo-strip" id="hkmoWarnings" hidden></div>
     <div class="warning-legend-bar">
       <div class="warning-legend">
         <span><i class="lv-blue"></i>Ⅳ级 · 一般</span>
@@ -204,14 +445,14 @@
     <div class="warning-grid" id="warningList" aria-live="polite">
       <div class="warning-loading">正在读取全国预警…</div>
     </div>
-    <p class="warning-note">数据：中央气象台 / 中国天气网 · 森林火险来自广东省气象局 · 公开预警信号自动汇总。按国家 14 类口径，五省常用 13 类；暴雪、沙尘暴及地方信号归入“其他”。详情以官方发布为准。</p>
+    <p class="warning-note">数据：中央气象台 / 中国天气网 · 森林火险来自广东省气象局 · 港澳信号来自香港天文台 / 澳门地球物理气象局 · 公开预警信号自动汇总。按国家 14 类口径，五省常用 13 类；暴雪、沙尘暴及地方信号归入“其他”。港澳沿用当地信号名称（如八号风球、黑色暴雨），详情以官方发布为准。</p>
   </div>
 </section>
 
 <section class="warning-classic-page" id="warningClassicPage" aria-hidden="true">
   <header class="wcv-top">
     <button class="wcv-back" id="warningClassicBack" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7"/></svg>功能中心</button>
-    <div class="wcv-brand"><span>华南五省 · 实时气象预警</span><h1>气象灾害预警</h1></div>
+    <div class="wcv-brand"><span>风雨溯元 · 实时气象预警</span><h1>气象灾害预警</h1></div>
     <div class="wcv-top-right">
       <div class="warning-view-switch" role="group" aria-label="预警显示方式">
         <button type="button" data-warning-view="escalator" aria-pressed="false" aria-label="切换到扶梯版">扶梯</button>
@@ -221,6 +462,36 @@
       <button class="wcv-refresh" id="warningClassicRefresh" type="button">刷新</button>
     </div>
   </header>
+  <section class="wct-panel" id="warningTestPanel" hidden>
+    <div class="wct-gate" id="wctGate" hidden>
+      <b>测试面板</b>
+      <span>需要访问密码（与地方雷达页相同）</span>
+      <input class="wct-gate-pass" id="wctPass" type="password" maxlength="12" autocomplete="off" placeholder="访问密码" aria-label="测试面板访问密码" />
+      <button class="wct-add" id="wctUnlock" type="button">解锁</button>
+      <span class="wct-gate-msg" id="wctGateMsg" role="status" aria-live="polite"></span>
+    </div>
+    <div id="wctMain" hidden>
+      <header class="wct-head">
+        <b>测试面板</b>
+        <span>手动添加预警信号，验证粤港澳地图与明细效果 · 仅本页生效，刷新即清空</span>
+        <button class="wct-clear" id="wctClear" type="button">清空</button>
+      </header>
+      <div class="wct-form">
+        <label>地区<select id="wctRegion" aria-label="选择测试地区"></select></label>
+        <label>信号类型<select id="wctType" aria-label="选择测试信号"></select></label>
+        <label>等级<select id="wctLevel" aria-label="选择预警等级">
+          <option value="blue">蓝色</option>
+          <option value="yellow" selected>黄色</option>
+          <option value="orange">橙色</option>
+          <option value="red">红色</option>
+          <option value="white">白色</option>
+        </select></label>
+        <button class="wct-add" id="wctAdd" type="button">添加</button>
+        <span class="wct-msg" id="wctMsg" role="status"></span>
+      </div>
+      <div class="wct-list" id="wctList" aria-live="polite"></div>
+    </div>
+  </section>
   <div class="wcv-body">
     <div class="wcv-left">
       <section class="wcm-card" aria-label="预警等级地图">
@@ -228,9 +499,15 @@
           <label class="wcm-region">当前地域<select id="warningClassicProvince" aria-label="切换当前地域"></select></label>
           <span class="wcm-map-meta" id="warningClassicSource">中央气象台 · 按城市最高等级着色</span>
         </div>
-        <div id="warningClassicMap" class="wcm-map" aria-label="预警等级城市分布地图"></div>
+        <div class="wcm-mapwrap">
+          <div id="warningClassicMap" class="wcm-map" aria-label="预警等级城市分布地图"></div>
+          <div class="wcm-clock" id="warningClassicClock" hidden>—</div>
+        </div>
         <div class="wcm-empty" id="warningClassicMapEmpty" hidden>当前筛选条件下暂无预警城市</div>
         <div class="wcm-legend" id="warningClassicLegend" aria-label="预警等级数量"></div>
+        <button class="wcm-download" id="warningClassicDownload" type="button" aria-label="下载预警图" title="下载预警图" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="m7.7 10.6 4.3 4.3 4.3-4.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        </button>
       </section>
     </div>
     <aside class="wcv-right" aria-label="预警信号分析图表">
@@ -293,7 +570,7 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       地震信息
     </button>
-    <div class="center-brand"><span>华南气象</span><b>震中详情</b></div>
+    <div class="center-brand"><span>风雨溯元</span><b>震中详情</b></div>
     <div class="quake-source"><i class="dot"></i><span id="qdSceneLabel">卫星地形 · 行政边界</span></div>
   </header>
   <div class="qd-body">
@@ -317,8 +594,8 @@
 <section class="typhoon-page" id="typhoonPage" aria-hidden="true">
   <header class="tp-header">
     <button class="tp-button tp-back" id="typhoonBack" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg>功能中心</button>
-    <div class="tp-brand"><span>华南气象 · 实时路径 · 中央气象台</span><h1>台风路径</h1></div>
-    <div class="tp-header-right"><span id="tpUpdated" role="status">等待更新</span><button class="tp-button" id="typhoonRefresh" type="button">刷新数据</button></div>
+    <div class="tp-brand"><span>风雨溯元 · 实时路径 · 中央气象台</span><h1>台风路径</h1></div>
+    <div class="tp-header-right"><span id="tpUpdated" role="status">等待更新</span><a class="tp-button tp-pro-entry" href="#/typhoon-pro">专业版</a><button class="tp-button" id="typhoonRefresh" type="button">刷新数据</button></div>
   </header>
   <div class="tp-workspace">
     <aside class="tp-sidebar">
@@ -412,7 +689,7 @@
       </div>
       <div class="radar-dbz" id="radarDbz" aria-hidden="true">
         <i></i>
-        <span>5 · 10 · 15 · 20 · 25 · 30 · 35 · 40 · 45 · 50 · 55 · 60 · 65 · 70 dBZ</span>
+        <span>5 · 10 · 15 · 20 · 25 · 30 · 35 · 40 · 45 · 50 · 55 · 60 · 65 · 70<b>dBZ</b></span>
       </div>
       <div class="radar-loading" id="radarLoading"><span class="radar-spinner"></span><span id="radarProgress">正在加载雷达帧…</span></div>
     </div>
@@ -443,15 +720,105 @@
   </div>
 </aside>
 
+<button class="ct-launch" id="coldLabLaunch" type="button" aria-controls="coldLabPanel" aria-expanded="false">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17h8M4 12h13M4 7h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="17.5" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+  冷空气测试台
+</button>
+<section class="ct-panel" id="coldLabPanel" aria-label="冷空气过程测试台" aria-hidden="true">
+  <header class="ct-head">
+    <div>
+      <span class="ct-kicker">COLD AIR LAB</span>
+      <h4>冷空气过程测试台</h4>
+    </div>
+    <button class="ct-close" id="coldLabClose" type="button" aria-label="关闭测试台">×</button>
+  </header>
+  <div class="ct-body">
+    <div class="ct-sec">
+      <div class="ct-sec-head">
+        <h5>过程回放</h5>
+        <button class="ct-link" id="coldLabLive" type="button">回到实况</button>
+      </div>
+      <div class="ct-play">
+        <button class="ct-icon" id="coldLabPrev" type="button" aria-label="上一小时">‹</button>
+        <button class="ct-play-btn" id="coldLabPlay" type="button">播放</button>
+        <button class="ct-icon" id="coldLabNext" type="button" aria-label="下一小时">›</button>
+        <input class="ct-range" id="coldLabRange" type="range" min="0" max="59" value="0" aria-label="回放进度">
+        <button class="ct-speed" id="coldLabSpeed" type="button" aria-label="切换播放速度">1×</button>
+      </div>
+      <div class="ct-clock">
+        <b id="coldLabClock">—</b>
+        <span class="ct-state" id="coldLabState">监测中</span>
+      </div>
+      <div class="ct-marks" id="coldLabMarks" aria-label="关键节点"></div>
+    </div>
+
+    <div class="ct-sec">
+      <div class="ct-sec-head">
+        <h5>单站微调</h5>
+        <button class="ct-link" id="coldLabReset" type="button">复位本站</button>
+      </div>
+      <div class="ct-cityrow">
+        <select class="ct-select" id="coldLabCity" aria-label="选择站点"></select>
+        <button class="ct-ghost" id="coldLabClear" type="button">清除微调</button>
+      </div>
+      <label class="ct-field">
+        <span class="ct-field-top"><em>气温</em><b id="coldLabTempVal">—</b></span>
+        <input class="ct-range ct-range--field" id="coldLabTemp" type="range" min="2" max="36" step="0.1" value="20">
+      </label>
+      <label class="ct-field">
+        <span class="ct-field-top"><em>风向</em><b id="coldLabDirVal">—</b></span>
+        <input class="ct-range ct-range--field" id="coldLabDir" type="range" min="0" max="360" step="5" value="180">
+      </label>
+      <label class="ct-field">
+        <span class="ct-field-top"><em>风速</em><b id="coldLabSpdVal">—</b></span>
+        <input class="ct-range ct-range--field" id="coldLabSpd" type="range" min="0" max="16" step="0.1" value="3">
+      </label>
+      <label class="ct-field">
+        <span class="ct-field-top"><em>降水</em><b id="coldLabRainVal">—</b></span>
+        <input class="ct-range ct-range--field" id="coldLabRain" type="range" min="0" max="5" step="0.1" value="0">
+      </label>
+      <div class="ct-spanrow">
+        <span>输入跨度</span>
+        <div class="ct-seg" id="coldLabSpan" role="group" aria-label="送入引擎的历史跨度">
+          <button type="button" data-span="24">24h</button>
+          <button type="button" data-span="36">36h</button>
+          <button type="button" data-span="48">48h</button>
+          <button type="button" data-span="60" class="is-on">全部</button>
+        </div>
+      </div>
+      <p class="ct-hint">改动从当前帧起生效，向后沿用；用于复现转蓝边界与历史窗口是否够用。</p>
+    </div>
+
+    <div class="ct-verdict">
+      <div class="ct-vhead"><b>当前判定</b><span class="ct-badge" id="coldLabBadge">监测中</span></div>
+      <ul class="ct-vlist" id="coldLabVerdict"></ul>
+      <div class="ct-checks" id="coldLabChecks"></div>
+      <p class="ct-vnote" id="coldLabNote">由 cold-air-engine.js 逐帧重算</p>
+    </div>
+  </div>
+  <footer class="ct-foot">
+    <span id="coldLabFoot">演示数据 · 不影响线上</span>
+    <span id="coldLabFrame">帧 —</span>
+  </footer>
+</section>
+
 <div class="toast" id="toast" role="status"></div>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/echarts.min.js"></script>
 <script src="data/mapdata.js"></script>
+<script src="data/hkmo-geo.js"></script>
+<script src="data/gd-counties.js"></script>
+<script src="assets/wx-signals/manifest.js"></script>
+<script src="assets/hk-signals/manifest.js"></script>
 <script src="data/snapshot.js"></script>
+<script src="data/cold-air.js"></script>
 <script src="warnings.js"></script>
 <script src="warnings-classic.js"></script>
 <script src="typhoons.js"></script>
+<script src="typhoon-pro.js"></script>
+<script src="home-feed.js"></script>
+<script src="cold-air-test.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

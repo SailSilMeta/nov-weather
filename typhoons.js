@@ -14,7 +14,7 @@
   const windLevelByCode = { '30KTS': 7, '50KTS': 10, '64KTS': 12 };
   const compass = { N: '北', NNE: '北东北', NE: '东北', ENE: '东东北', E: '东', ESE: '东东南', SE: '东南', SSE: '南东南', S: '南', SSW: '南西南', SW: '西南', WSW: '西西南', W: '西', WNW: '西北西', NW: '西北', NNW: '北西北' };
   const state = {
-    open: false, local: true, project: null, year: CURRENT_YEAR, list: [], storm: null,
+    open: false, silent: false, local: true, project: null, year: CURRENT_YEAR, list: [], storm: null,
     points: [], selected: 0, agencies: new Set(), forecasts: [], listSeq: 0, detailSeq: 0,
     map: null, base: 'vec', layers: {}, track: null, forecastLayer: null, windLayer: null,
     marker: null, timer: null, playTimer: null, listMeta: null, detailMeta: null,
@@ -337,10 +337,10 @@
 
   function initMap() {
     if (state.map) return;
-    const map = L.map('typhoonMap', { zoomControl: false, minZoom: 3, maxZoom: 12, preferCanvas: true, worldCopyJump: false });
+    const map = L.map('typhoonMap', { zoomControl: false, minZoom: 3, maxZoom: 18, preferCanvas: true, worldCopyJump: false });
     L.control.zoom({ position: 'topright' }).addTo(map);
     map.attributionControl.setPrefix(false);
-    const options = { minZoom: 3, maxZoom: 12, noWrap: true, keepBuffer: 2, attribution: '底图 © 高德地图' };
+    const options = { minZoom: 3, maxZoom: 18, noWrap: false, keepBuffer: 2, attribution: '底图 © 高德地图' };
     const tiles = (kind) => {
       const remote = kind === 'vec'
         ? 'https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&lang=zh_cn&size=1&scl=1&style=7'
@@ -390,6 +390,7 @@
     $('#tpTimeline').value = '0';
     $('#tpTimeline').max = '0';
     for (const id of ['tpTimeline', 'tpPlay', 'tpLatest']) $('#' + id).disabled = true;
+    document.dispatchEvent(new CustomEvent('typhoon:update'));
   }
 
   function fitTrack() {
@@ -544,6 +545,7 @@
       .on('mouseout', hideHover)
       .addTo(state.map);
     drawWind(point);
+    document.dispatchEvent(new CustomEvent('typhoon:update'));
   }
 
   function nmcDetail(data, entry) {
@@ -593,6 +595,7 @@
     state.forecasts = merged;
     renderForecastOptions();
     drawForecasts();
+    document.dispatchEvent(new CustomEvent('typhoon:update'));
   }
 
   async function loadStorm(id) {
@@ -620,7 +623,7 @@
       renderForecastOptions();
       drawForecasts();
       selectPoint(state.points.length - 1);
-      fitTrack();
+      if (!state.silent) fitTrack();
       updateSource();
       setMessage('');
       if (detail.storm.source === 'nmc') augmentForecasts(entry, seq);
@@ -685,15 +688,35 @@
     }
   }
 
-  function open(options) {
-    if (state.open) return;
-    state.open = true;
-    state.local = options.local;
-    state.project = options.project;
+  function reveal() {
     pageEl.setAttribute('aria-hidden', 'false');
     document.body.classList.add('typhoon-open');
+    if (state.map) requestAnimationFrame(() => state.map.invalidateSize());
+  }
+
+  function setYear(year) {
+    const value = Number(year);
+    if (!Number.isFinite(value)) return;
+    state.year = value;
+    const select = $('#tpYear');
+    if (select) select.value = String(value);
+    return loadList();
+  }
+
+  function open(options = {}) {
+    const silent = Boolean(options.silent);
+    if (state.open) {
+      state.silent = silent;
+      if (!silent) reveal();
+      return;
+    }
+    state.open = true;
+    state.silent = silent;
+    state.local = options.local;
+    state.project = options.project;
+    if (!silent) reveal();
     initMap();
-    requestAnimationFrame(() => state.map.invalidateSize());
+    if (!silent) requestAnimationFrame(() => state.map.invalidateSize());
     loadList();
     state.timer = setInterval(() => { if (state.open && !document.hidden && !$('#typhoonRefresh').disabled) loadList(); }, 5 * 60e3);
   }
@@ -746,5 +769,5 @@
   });
   new ResizeObserver(() => { if (state.open && state.map) state.map.invalidateSize(); }).observe($('#typhoonMap'));
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlay(); });
-  window.TyphoonPage = { open, close, state };
+  window.TyphoonPage = { open, close, reveal, selectPoint, loadStorm, setYear, state };
 })();

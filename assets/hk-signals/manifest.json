@@ -1,0 +1,90 @@
+{
+  "source": "https://www.hko.gov.hk/sc/wxinfo/dailywx/wxwarntoday.htm",
+  "note": "香港天文台官方警告图标本地存档（2026-10-31），前端优先用本地文件。",
+  "items": [
+    {
+      "file": "cold.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/cold.gif"
+    },
+    {
+      "file": "firer.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/firer.gif"
+    },
+    {
+      "file": "firey.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/firey.gif"
+    },
+    {
+      "file": "frost.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/frost.gif"
+    },
+    {
+      "file": "landslip.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/landslip.gif"
+    },
+    {
+      "file": "msn.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/msn.gif"
+    },
+    {
+      "file": "ntfl.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/ntfl.gif"
+    },
+    {
+      "file": "raina.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/raina.gif"
+    },
+    {
+      "file": "rainb.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/rainb.gif"
+    },
+    {
+      "file": "rainr.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/rainr.gif"
+    },
+    {
+      "file": "tc1.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc1.gif"
+    },
+    {
+      "file": "tc10.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc10.gif"
+    },
+    {
+      "file": "tc3.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc3.gif"
+    },
+    {
+      "file": "tc8ne.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc8ne.gif"
+    },
+    {
+      "file": "tc8nw.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc8nw.gif"
+    },
+    {
+      "file": "tc8se.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc8se.gif"
+    },
+    {
+      "file": "tc8sw.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc8sw.gif"
+    },
+    {
+      "file": "tc9.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tc9.gif"
+    },
+    {
+      "file": "ts.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/ts.gif"
+    },
+    {
+      "file": "tsunami-warn.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/tsunami-warn.gif"
+    },
+    {
+      "file": "vhot.gif",
+      "origin": "https://www.hko.gov.hk/tc/wxinfo/dailywx/images/vhot.gif"
+    }
+  ]
+}

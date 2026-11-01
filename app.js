@@ -37,8 +37,26 @@
     return level;
   }
   const num = (v) => (typeof v === 'number' && v !== 9999 && v > -999 ? v : null);
+  // 中央气象台的日最高/最低温缺测会返回 9999（数字或字符串都有）
+  const dailyTemp = (v) => {
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    return Number.isFinite(n) && n !== 9999 && n > -999 ? n : null;
+  };
   const weatherText = (w) => (w && w.info && w.info !== '9999' && w.info !== '-' ? w.info : '');
   const fix1 = (v) => (v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1));
+
+  // 逐时数据只带时:分，用发布时间补出「11月01日19时-11月01日22时」这样的时段
+  function threeHourWindow(pub, hhmm) {
+    const date = new Date(String(pub || '').replace(' ', 'T'));
+    const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})/);
+    if (!m || Number.isNaN(date.getTime())) return '';
+    let back = date.getHours() * 60 + date.getMinutes() - (Number(m[1]) * 60 + Number(m[2]));
+    if (back < 0) back += 1440;
+    const end = new Date(date.getTime() - back * 60e3);
+    const start = new Date(end.getTime() - 3 * 60 * 60e3);
+    const one = (d) => `${d.getMonth() + 1}月${String(d.getDate()).padStart(2, '0')}日${String(d.getHours()).padStart(2, '0')}时`;
+    return `${one(start)}-${one(end)}`;
+  }
 
   function normalize(raw) {
     const cities = {};
@@ -51,15 +69,28 @@
       const rain6h = Math.round(rains.slice(-6).reduce((a, b) => a + b, 0) * 10) / 10;
       const rain1h = typeof c.rainNow === 'number' ? c.rainNow : rains.length ? rains[rains.length - 1] : null;
       const firstT = hourly.find((h) => typeof h.t === 'number');
+      // 3小时变温：最新整点实况减去 3 小时前的整点实况，全部按本地逐时数据算
+      const lastT = hourly.length ? hourly[hourly.length - 1].t : null;
+      const base3T = hourly.length >= 4 ? hourly[hourly.length - 4].t : null;
+      const tmax = dailyTemp(c.tmax);
+      const tmin = dailyTemp(c.tmin);
       cities[ad] = {
         ...c,
+        tmax,
+        tmin,
+        // 旧缓存里可能存过 9999，渲染前统一清掉
+        forecast: Array.isArray(c.forecast)
+          ? c.forecast.map((d) => ({ ...d, tmax: dailyTemp(d.tmax), tmin: dailyTemp(d.tmin) }))
+          : c.forecast,
         precip24h: rain24h,
         rain24h,
         rain6h,
         rain1h,
-        tmax24: temps.length ? Math.max(...temps) : c.tmax,
-        tmin24: temps.length ? Math.min(...temps) : c.tmin,
+        tmax24: temps.length ? Math.max(...temps) : tmax,
+        tmin24: temps.length ? Math.min(...temps) : tmin,
         dtemp24: typeof c.t === 'number' && firstT && hourly.length >= 20 ? Math.round((c.t - firstT.t) * 10) / 10 : null,
+        dtemp3: typeof lastT === 'number' && typeof base3T === 'number' ? Math.round((lastT - base3T) * 10) / 10 : null,
+        dtemp3Range: typeof lastT === 'number' && typeof base3T === 'number' ? threeHourWindow(c.pub, hourly[hourly.length - 1].time) : '',
       };
     });
     return { ...raw, cities };
@@ -89,6 +120,17 @@
     { min: 4, label: '4', color: '#f2b071' },
     { min: 6, label: '6', color: '#e5825c' },
     { min: 8, label: '≥8', color: '#c94848' },
+  ];
+  const DTEMP3_BANDS = [
+    { min: -Infinity, label: '≤-6', color: '#3d63b8' },
+    { min: -6, label: '-6', color: '#5f8cd8' },
+    { min: -4, label: '-4', color: '#93b5e8' },
+    { min: -2, label: '-2', color: '#c8dcf3' },
+    { min: -1, label: '-1', color: '#eef1e9' },
+    { min: 1, label: '1', color: '#f7d8a4' },
+    { min: 2, label: '2', color: '#f2b071' },
+    { min: 4, label: '4', color: '#e5825c' },
+    { min: 6, label: '≥6', color: '#c94848' },
   ];
   const WIND_BANDS = [
     { min: 0, label: '0', color: '#e8f4f1' },
@@ -170,8 +212,20 @@
       unitShort: '°C',
       mid: '20',
     },
+    dtemp3: {
+      tab: '3h变温',
+      title: '3小时变温',
+      unit: '°C',
+      accent: '#b04a6b',
+      kind: 'dtemp',
+      bands: DTEMP3_BANDS,
+      value: (c) => c.dtemp3,
+      format: signedFormat,
+      unitShort: '°C',
+      mid: '0',
+    },
     dtemp: {
-      tab: '变温',
+      tab: '24h变温',
       title: '24小时变温',
       unit: '°C',
       accent: '#b04a6b',
@@ -231,7 +285,7 @@
       mid: '25',
     },
   };
-  const METRIC_ORDER = ['temp', 'tmax', 'tmin', 'dtemp', 'wind', 'rain1h', 'rain6h', 'rain24h'];
+  const METRIC_ORDER = ['temp', 'tmax', 'tmin', 'dtemp3', 'dtemp', 'wind', 'rain1h', 'rain6h', 'rain24h'];
 
   const RANK_PROVINCES = new Set(['广东', '广西', '湖南', '江西', '福建']);
   const RANK_API = {
@@ -384,6 +438,17 @@
     return { hideOverlap: zoom < 2, moveOverlap: 'none' };
   }
 
+  // 紧贴省会的城市（如佛山挨着广州），标签放到背离省会的一侧，别被省会的实况压住
+  function nearCapitalSide(city) {
+    for (const capAd of CAPITALS) {
+      const cap = CITY_BY_ADCODE.get(capAd);
+      if (!cap) continue;
+      if (Math.hypot(city.center[0] - cap.center[0], city.center[1] - cap.center[1]) > 0.35) continue;
+      return city.center[1] > cap.center[1] ? 'top' : 'bottom';
+    }
+    return null;
+  }
+
   function labelSeriesData() {
     const m = METRICS[state.metric];
     const mobile = isMobile();
@@ -400,7 +465,7 @@
         mv: m.format(v),
         detailed: state.detailed,
         mobile,
-        label: { position: state.detailed ? (ad % 2 ? 'bottom' : 'top') : 'bottom' },
+        label: { position: nearCapitalSide(city) || (state.detailed ? (ad % 2 ? 'bottom' : 'top') : 'bottom') },
       });
     });
     return items;
@@ -431,18 +496,18 @@
     const mobile = isMobile();
     return {
       v: {
-        fontSize: mobile ? 11.5 : 11.5,
+        fontSize: mobile ? 11.5 : 12,
         fontWeight: 700,
         color: accent,
-        lineHeight: mobile ? 13.5 : 14,
+        lineHeight: mobile ? 13.5 : 14.5,
         textBorderColor: 'rgba(255,255,255,.92)',
         textBorderWidth: 2.5,
       },
       n: {
-        fontSize: 10.5,
+        fontSize: mobile ? 10.5 : 11.5,
         fontWeight: 600,
         color: '#3f5563',
-        lineHeight: mobile ? 12 : 12.5,
+        lineHeight: mobile ? 12 : 13.5,
         textBorderColor: 'rgba(255,255,255,.92)',
         textBorderWidth: 2.5,
       },
@@ -709,7 +774,7 @@
         } else if (m.kind === 'dtemp') {
           const avgD = avg(vals);
           main = avgD == null ? '—' : `${avgD > 0 ? '+' : ''}${avgD.toFixed(1)}°`;
-          label = '平均变温';
+          label = state.metric === 'dtemp3' ? '平均3h变温' : '平均变温';
         } else {
           const avgV = avg(vals);
           main = avgV == null ? '—' : `${avgV.toFixed(1)}°`;
@@ -892,8 +957,24 @@
     return rows.sort((a, b) => b.value - a.value);
   }
 
-  function rankBarWidth(v, min, max) {
-    if (!(max > min)) return 55;
+  // 各站时段略有差异，取出现最多的那个作为排行榜的计算时段
+  function threeHourRange() {
+    const tally = new Map();
+    Object.values(state.data.cities).forEach((c) => {
+      if (c && c.dtemp3Range) tally.set(c.dtemp3Range, (tally.get(c.dtemp3Range) || 0) + 1);
+    });
+    let best = '';
+    let count = 0;
+    tally.forEach((n, label) => {
+      if (n > count) {
+        best = label;
+        count = n;
+      }
+    });
+    return best;
+  }
+
+  function rankBarWidth(v, min, max) {    if (!(max > min)) return 55;
     return Math.max(4, Math.min(100, ((v - min) / (max - min)) * 100));
   }
 
@@ -978,7 +1059,10 @@
         province: keepProvince,
         city,
         stations: [],
-        meta: `${fmtTime(state.data.fetchedAt) || '—'} 实况 · 本站 ${city.length} 城统计`,
+        meta:
+          metric === 'dtemp3'
+            ? `${fmtTime(state.data.fetchedAt) || '—'} 实况 · ${threeHourRange() || '本站近3小时计算'}`
+            : `${fmtTime(state.data.fetchedAt) || '—'} 实况 · 本站 ${city.length} 城统计`,
         source: 'local',
         loading: false,
         supportsAll: false,
@@ -1547,6 +1631,18 @@
       status: 'live',
       route: '#/typhoon',
     },
+    {
+      id: 'radar',
+      title: '地方雷达',
+      desc: '省/市雷达回波拼图，按时间轴逐帧回放降水的强度与移动趋势。',
+      category: '实况观测',
+      accent: '#2f9b7f',
+      icon: 'radar',
+      tags: ['雷达回波', '时间回放', '强度色标'],
+      status: 'beta',
+      route: '#/radar',
+      lock: true,
+    },
   ];
 
   const FEATURE_ICONS = {
@@ -1556,9 +1652,12 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2 21 20H3L12 4.2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9.2v5.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.1" fill="currentColor"/></svg>',
     typhoon:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.2c4.8 0 8.8 3.9 8.8 8.8M12 20.8c-4.8 0-8.8-3.9-8.8-8.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7.4 7.4c2.6-2.6 6.7-2.2 8.8.4M16.6 16.6c-2.6 2.6-6.7 2.2-8.8-.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    radar:
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 12l6-4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>',
   };
 
   const centerPageEl = $('#centerPage');
+  const radarPageEl = $('#radarPage');
   const centerState = { query: '', filter: 'all', favs: new Set() };
   let centerFromMap = false;
 
@@ -1581,7 +1680,7 @@
     const fav = centerState.favs.has(f.id);
     const statusText = f.status === 'live' ? '可用' : f.status === 'beta' ? '内测' : '规划中';
     const statusClass = f.status === 'live' ? ' live' : '';
-    const footText = f.status === 'live' ? '进入 →' : '即将上线 →';
+    const footText = f.route && f.status !== 'planned' ? '进入 →' : '即将上线 →';
     return `<article class="feature-card${f.wide ? ' wide' : ''}" data-id="${f.id}" tabindex="0" role="button" style="--fc-accent:${f.accent}" aria-label="${f.title}（${statusText}）">
       <div class="fc-top">
         <span class="fc-icon">${FEATURE_ICONS[f.icon] || ''}</span>
@@ -1592,7 +1691,7 @@
       <p>${f.desc}</p>
       <div class="fc-tags">${(f.tags || []).map((t) => `<span>${t}</span>`).join('')}</div>
       ${f.wide ? `<span class="fc-watermark">${FEATURE_ICONS[f.icon] || ''}</span>` : ''}
-      <div class="fc-foot"><span>${f.category}</span><span class="fc-arrow">${footText}</span></div>
+      <div class="fc-foot"><span>${f.category}</span>${f.lock ? '<span class="fc-lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.2" width="15" height="9.8" rx="2.6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.2V7.8a4 4 0 0 1 8 0v2.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>需密码</span>' : ''}<span class="fc-arrow">${footText}</span></div>
     </article>`;
   }
 
@@ -1600,7 +1699,7 @@
     if (!card) return;
     const feature = FEATURES.find((f) => f.id === card.dataset.id);
     if (!feature) return;
-    if (feature.status === 'live' && feature.route) location.hash = feature.route;
+    if (feature.route && feature.status !== 'planned') location.hash = feature.route;
     else toast(`${feature.title} · 即将上线`);
   }
 
@@ -1663,6 +1762,24 @@
     const isQuakeDetail = route.startsWith('earthquake/');
     const isQuake = route.startsWith('earthquake');
     const isCenter = route.startsWith('center');
+    const isTyphoonPro = route.startsWith('typhoon-pro');
+    const isRadar = route.startsWith('radar');
+    if (!isRadar) closeRadarPage();
+    if (window.TyphoonProPage && !isTyphoonPro) window.TyphoonProPage.close();
+    document.body.classList.toggle('typhoon-pro-open', isTyphoonPro);
+    if (isTyphoonPro) {
+      centerFromMap = false;
+      closeQuakeDetail();
+      closeQuakePage();
+      if (window.WarningPage) window.WarningPage.close();
+      if (window.WarningClassicPage) window.WarningClassicPage.close();
+      document.body.classList.remove('center-open', 'quake-open', 'warning-classic-open', 'typhoon-open');
+      centerPageEl.setAttribute('aria-hidden', 'true');
+      document.title = '台风专业版 · 风雨溯元';
+      if (window.TyphoonPage) window.TyphoonPage.open({ local: usesLocalMapProxy(), project: wgs84ToGcj02, silent: true });
+      if (window.TyphoonProPage) window.TyphoonProPage.open();
+      return;
+    }
     if (route === 'typhoon') {
       centerFromMap = false;
       closeQuakeDetail();
@@ -1671,7 +1788,7 @@
       if (window.WarningClassicPage) window.WarningClassicPage.close();
       document.body.classList.remove('center-open', 'quake-open', 'warning-classic-open');
       centerPageEl.setAttribute('aria-hidden', 'true');
-      document.title = '台风路径 · 华南气象';
+      document.title = '台风路径 · 风雨溯元';
       if (window.TyphoonPage) window.TyphoonPage.open({ local: usesLocalMapProxy(), project: wgs84ToGcj02 });
       return;
     }
@@ -1684,7 +1801,7 @@
       document.body.classList.remove('center-open', 'quake-open', 'warning-open');
       centerPageEl.setAttribute('aria-hidden', 'true');
       document.body.classList.add('warning-classic-open');
-      document.title = '气象预警 · 华南气象';
+      document.title = '气象预警 · 风雨溯元';
       if (window.WarningClassicPage) window.WarningClassicPage.open();
       return;
     }
@@ -1696,7 +1813,7 @@
       closeQuakePage();
       document.body.classList.remove('center-open', 'quake-open');
       centerPageEl.setAttribute('aria-hidden', 'true');
-      document.title = '气象预警 · 华南气象';
+      document.title = '气象预警 · 风雨溯元';
       if (window.WarningPage) window.WarningPage.open();
       return;
     }
@@ -1707,7 +1824,7 @@
       document.body.classList.remove('center-open');
       document.body.classList.add('quake-open', 'quake-detail-open');
       centerPageEl.setAttribute('aria-hidden', 'true');
-      document.title = '震中详情 · 华南气象';
+      document.title = '震中详情 · 风雨溯元';
       openQuakeDetail(decodeURIComponent(route.slice('earthquake/'.length)));
       return;
     }
@@ -1717,16 +1834,25 @@
       document.body.classList.remove('center-open');
       document.body.classList.add('quake-open');
       centerPageEl.setAttribute('aria-hidden', 'true');
-      document.title = '地震信息 · 华南气象';
+      document.title = '地震信息 · 风雨溯元';
       openQuakePage();
       return;
     }
     closeQuakeDetail();
     closeQuakePage();
     document.body.classList.remove('quake-open');
+    if (isRadar) {
+      centerFromMap = false;
+      document.body.classList.remove('center-open');
+      document.body.classList.add('radar-open');
+      centerPageEl.setAttribute('aria-hidden', 'true');
+      document.title = '地方雷达 · 风雨溯元';
+      openRadarPage();
+      return;
+    }
     if (isCenter) {
       renderCenterCards();
-      document.title = '功能中心 · 华南气象';
+      document.title = '功能中心 · 风雨溯元';
       document.body.classList.add('center-open');
       centerPageEl.setAttribute('aria-hidden', 'false');
       centerPageEl.scrollTop = 0;
@@ -1734,7 +1860,7 @@
       return;
     }
     centerFromMap = false;
-    document.title = '华南五省气象图 · 粤湘桂赣闽';
+    document.title = '风雨溯元・Nov Weather';
     document.body.classList.remove('center-open');
     centerPageEl.setAttribute('aria-hidden', 'true');
     setTimeout(() => {
@@ -1743,6 +1869,730 @@
       updateLabelDensity();
     }, 60);
   }
+
+  /* ---------------- radar feature page ---------------- */
+  const RADAR_TOKEN_KEY = 'qxksh.radarToken';
+  const radarGuard = { unlocked: false, busy: false, seq: 0 };
+  const radarGateEl = $('#radarGate');
+  const radarGateForm = $('#radarGateForm');
+  const radarPassEl = $('#radarPass');
+  const radarGateSubmit = $('#radarGateSubmit');
+  const radarGateMsg = $('#radarGateMsg');
+  const radarContentEl = $('#radarContent');
+
+  function readRadarToken() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RADAR_TOKEN_KEY) || 'null');
+      if (saved && typeof saved.token === 'string' && Number(saved.exp) > Date.now()) return saved;
+    } catch (e) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  function saveRadarToken(token, exp) {
+    try {
+      sessionStorage.setItem(RADAR_TOKEN_KEY, JSON.stringify({ token, exp }));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function dropRadarToken() {
+    try {
+      sessionStorage.removeItem(RADAR_TOKEN_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function radarGateMessage(text, tone) {
+    radarGateMsg.textContent = text || '';
+    radarGateMsg.classList.toggle('is-ok', tone === 'ok');
+  }
+
+  function lockRadarPage(message) {
+    radarGuard.unlocked = false;
+    stopRadarBoard();
+    closeRadarViewer();
+    radarContentEl.hidden = true;
+    radarGateEl.hidden = false;
+    radarGateSubmit.disabled = radarGuard.busy;
+    radarGateMessage(message, '');
+  }
+
+  function unlockRadarPage() {
+    radarGuard.unlocked = true;
+    radarGateEl.hidden = true;
+    radarContentEl.hidden = false;
+    radarGateSubmit.disabled = false;
+    radarGateMessage('', '');
+    radarPassEl.value = '';
+    radarPageEl.scrollTop = 0;
+    startRadarBoard();
+    startRadarNews();
+  }
+
+  async function verifyRadarSession(token) {
+    const res = await fetch('/api/radar/auth/verify', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data && data.ok ? data : null;
+  }
+
+  async function openRadarPage() {
+    radarPageEl.setAttribute('aria-hidden', 'false');
+    radarPageEl.scrollTop = 0;
+    const seq = ++radarGuard.seq;
+    const saved = readRadarToken();
+    if (!saved) return lockRadarPage('');
+    lockRadarPage('正在验证访问权限…');
+    let granted = null;
+    try {
+      granted = await verifyRadarSession(saved.token);
+    } catch (e) {
+      granted = null;
+    }
+    if (seq !== radarGuard.seq) return;
+    if (granted) return unlockRadarPage();
+    dropRadarToken();
+    lockRadarPage('访问凭证已失效，请重新输入密码');
+  }
+
+  function closeRadarPage() {
+    radarGuard.seq += 1;
+    stopRadarBoard();
+    closeRadarViewer();
+    radarPageEl.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('radar-open');
+  }
+
+  radarGateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (radarGuard.busy) return;
+    const pass = radarPassEl.value.trim();
+    if (!pass) {
+      radarGateMessage('请输入密码', '');
+      radarPassEl.focus();
+      return;
+    }
+    radarGuard.busy = true;
+    radarGateSubmit.disabled = true;
+    radarGateMessage('正在验证…', '');
+    try {
+      const res = await fetch('/api/radar/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pass }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && data.ok && data.token) {
+        saveRadarToken(data.token, data.exp);
+        radarGuard.busy = false;
+        unlockRadarPage();
+        return;
+      }
+      if (res.status === 401) {
+        radarPassEl.select();
+        radarGateMessage('密码错误，请重新输入', '');
+      } else {
+        radarGateMessage('验证服务不可用，请稍后再试', '');
+      }
+    } catch (e) {
+      radarGateMessage('无法连接验证服务，请通过本地服务访问', '');
+    }
+    radarGuard.busy = false;
+    radarGateSubmit.disabled = false;
+  });
+
+  $('#radarBack').addEventListener('click', () => { location.hash = '#/center'; });
+
+  /* ----- radar split page: news list + board ----- */
+  const DG_RADAR_PRODUCTS = [
+    { key: 'dgleida', name: '东莞雷达图' },
+    { key: 'dgxkz', name: '东莞相控阵' },
+    { key: 'zhusanjiao', name: '珠三角雷达图' },
+    { key: 'gdleida', name: '广东雷达图' },
+  ];
+  const ZH_RADAR_PRODUCTS = [{ key: 'zhuhai', name: '珠海雷达' }];
+  const FS_RADAR_PRODUCTS = [{ key: 'foshan', name: '佛山镇街雷达图' }];
+  const JM_RADAR_PRODUCTS = [
+    { key: 'jmsc', name: '上川岛雷达' },
+    { key: 'jmjm', name: '江门雷达' },
+    { key: 'jmgd', name: '全省雷达' },
+  ];
+  const GZ_RADAR_PRODUCTS = [{ key: 'gzcr', name: '广州市组合反射率' }];
+  const MO_RADAR_PRODUCTS = [
+    { key: 'moRadar', name: '珠澳天气雷达' },
+    { key: 'moLight', name: '闪电定位' },
+  ];
+  const RADAR_SOURCES = [
+    { url: '/api/dg-radar', products: DG_RADAR_PRODUCTS },
+    { url: '/api/zh-radar', products: ZH_RADAR_PRODUCTS },
+    { url: '/api/fs-radar', products: FS_RADAR_PRODUCTS },
+    { url: '/api/jm-radar', products: JM_RADAR_PRODUCTS },
+    { url: '/api/gz-radar', products: GZ_RADAR_PRODUCTS },
+    { url: '/api/mo-radar', products: MO_RADAR_PRODUCTS },
+  ];
+  const RADAR_BOARD_PRODUCTS = RADAR_SOURCES.flatMap((source) => source.products);
+  const RADAR_FRAME_MS = 1000;
+  const RADAR_LOAD_WIDTH = 6;
+  const radarNewsListEl = $('#radarNewsList');
+  const radarPagerEl = $('#radarPager');
+  const radarGridEl = $('#radarGrid');
+  const radarMetaEl = $('#radarMeta');
+  const radarRefreshEl = $('#radarRefresh');
+  const radarViewerEl = $('#radarViewer');
+  const radarViewerImg = $('#radarViewerImg');
+  const radarViewerName = $('#radarViewerName');
+  const radarViewerTime = $('#radarViewerTime');
+  const radarViewerDots = $('#radarViewerDots');
+  const radarViewerTrack = $('#radarViewerTrack');
+  const radarViewerPlay = $('#radarViewerPlay');
+  const radarViewerClose = $('#radarViewerClose');
+  const radarViewerStage = $('#radarViewerStage');
+  const radarViewerPrev = $('#radarViewerPrev');
+  const radarViewerNext = $('#radarViewerNext');
+  let radarViewerState = null;
+  const radarNews = { page: 0, totalPages: 0, loading: false, started: false };
+  const radarBoard = { loading: false, cards: new Map() };
+  let radarRefreshTimer = null;
+
+  const RADAR_PLAY_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 2.2 9.4 6l-5.8 3.8z" fill="currentColor"/></svg>';
+  const RADAR_PAUSE_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="3" y="2.2" width="2.2" height="7.6" rx=".8" fill="currentColor"/><rect x="6.8" y="2.2" width="2.2" height="7.6" rx=".8" fill="currentColor"/></svg>';
+
+  function radarCardHtml(product) {
+    return `<figure class="radar-card" data-key="${product.key}">
+      <div class="radar-frame is-state">
+        <img class="radar-frame-img" alt="${product.name}" decoding="async" hidden />
+        <span class="radar-frame-note">加载中…</span>
+      </div>
+      <figcaption class="radar-card-foot">
+        <span class="radar-card-name">${product.name}</span>
+        <div class="radar-frames" hidden><div class="radar-frames-track"></div></div>
+        <span class="radar-card-time">—</span>
+        <button class="radar-card-play" type="button" title="播放${product.name}" disabled>${RADAR_PLAY_ICON}<span>播放</span></button>
+      </figcaption>
+    </figure>`;
+  }
+
+  function renderRadarCards() {
+    if (!radarGridEl || radarGridEl.childElementCount) return;
+    radarGridEl.innerHTML = RADAR_BOARD_PRODUCTS.map(radarCardHtml).join('');
+    radarGridEl.querySelectorAll('.radar-card').forEach((card) => {
+      const state = {
+        name: card.querySelector('.radar-card-name').textContent,
+        frame: card.querySelector('.radar-frame'),
+        img: card.querySelector('.radar-frame-img'),
+        note: card.querySelector('.radar-frame-note'),
+        time: card.querySelector('.radar-card-time'),
+        play: card.querySelector('.radar-card-play'),
+        framesBar: card.querySelector('.radar-frames'),
+        track: card.querySelector('.radar-frames-track'),
+        dots: [],
+        dotKey: '',
+        frames: [],
+        ready: false,
+        playing: false,
+        starting: false,
+        timer: null,
+        index: 0,
+        seq: 0,
+        preload: null,
+        staleNote: '',
+      };
+      state.img.addEventListener('error', () => {
+        if (!state.playing) setRadarCardNote(state, '图片加载失败');
+      });
+      radarBoard.cards.set(card.dataset.key, state);
+    });
+  }
+
+  function setRadarCardNote(state, text) {
+    state.note.textContent = text;
+    state.note.hidden = !text;
+    state.frame.classList.toggle('is-state', state.img.hidden && !!text);
+  }
+
+  function radarFrameItems(pos, total) {
+    const wanted = new Set([1, total]);
+    for (let d = -2; d <= 2; d += 1) {
+      const n = pos + d;
+      if (n >= 1 && n <= total) wanted.add(n);
+    }
+    const nums = [...wanted].sort((a, b) => a - b);
+    const out = [];
+    nums.forEach((n, i) => {
+      if (i && n - nums[i - 1] > 1) out.push(null);
+      out.push(n);
+    });
+    return out;
+  }
+
+  function syncRadarDots(state, smooth = true) {
+    state.dots.forEach((dot) => dot.classList.toggle('active', Number(dot.dataset.i) === state.index));
+    const active = state.track.querySelector('.radar-dot.active');
+    const bar = state.framesBar;
+    if (!active || !bar || bar.scrollWidth <= bar.clientWidth + 2) return;
+    const target = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    bar.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  function paintRadarFrame(state) {
+    const frame = state.frames[state.index];
+    if (!frame) return;
+    state.img.src = frame.src;
+    state.time.textContent = frame.clock || '—';
+    state.time.title = frame.stamp || '';
+    renderRadarDots(state);
+    paintRadarViewer(state);
+  }
+
+  function renderRadarDots(state) {
+    const total = state.frames.length;
+    if (!total) {
+      state.framesBar.hidden = true;
+      state.track.innerHTML = '';
+      state.dots = [];
+      state.dotKey = '';
+      return;
+    }
+    const items = radarFrameItems(state.index + 1, total);
+    const key = items.join(',');
+    if (key !== state.dotKey) {
+      state.dotKey = key;
+      state.track.innerHTML = items.map((n) => (n == null
+        ? '<span class="radar-frames-gap">…</span>'
+        : `<button class="radar-dot" type="button" data-i="${n - 1}" title="${escHtml(state.frames[n - 1].stamp || `第 ${n} 帧`)}" aria-label="第 ${n} 帧 ${escHtml(state.frames[n - 1].clock || '')}">${n}</button>`)).join('');
+      state.dots = Array.from(state.track.querySelectorAll('.radar-dot'));
+    }
+    state.framesBar.hidden = false;
+    syncRadarDots(state, false);
+    requestAnimationFrame(() => syncRadarDots(state, false));
+  }
+
+  function setRadarPlayUi(state, playing) {
+    state.play.innerHTML = playing ? `${RADAR_PAUSE_ICON}<span>暂停</span>` : `${RADAR_PLAY_ICON}<span>播放</span>`;
+    state.play.classList.toggle('is-playing', playing);
+    state.play.title = `${playing ? '暂停' : '播放'}${state.name}`;
+    if (radarViewerState === state) setRadarViewerPlayUi(playing);
+  }
+
+  function stopRadarCardPlay(state) {
+    if (state.timer) {
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+    if (state.playing) {
+      state.playing = false;
+      setRadarPlayUi(state, false);
+    }
+  }
+
+  function stopRadarBoard() {
+    radarBoard.cards.forEach(stopRadarCardPlay);
+    if (radarRefreshTimer) {
+      clearInterval(radarRefreshTimer);
+      radarRefreshTimer = null;
+    }
+  }
+
+  function radarViewerDotsHtml(state) {
+    return state.frames.map((frame, i) => `<button class="radar-viewer-dot" type="button" data-i="${i}" title="${escHtml(frame.stamp || `第 ${i + 1} 帧`)}" aria-label="第 ${i + 1} 帧 ${escHtml(frame.clock || '')}"></button>`).join('');
+  }
+
+  function setRadarViewerPlayUi(playing) {
+    radarViewerPlay.innerHTML = playing ? `${RADAR_PAUSE_ICON}<span>暂停</span>` : `${RADAR_PLAY_ICON}<span>播放</span>`;
+    radarViewerPlay.classList.toggle('is-playing', playing);
+  }
+
+  function syncRadarViewerDots(state, smooth = true) {
+    const dots = radarViewerTrack.children;
+    for (let i = 0; i < dots.length; i += 1) dots[i].classList.toggle('active', i === state.index);
+    const active = dots[state.index];
+    if (!active || radarViewerDots.scrollWidth <= radarViewerDots.clientWidth + 2) return;
+    const target = active.offsetLeft - (radarViewerDots.clientWidth - active.offsetWidth) / 2;
+    radarViewerDots.scrollTo({ left: Math.max(0, target), behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  function syncRadarViewerSteps(state) {
+    radarViewerPrev.disabled = state.index <= 0;
+    radarViewerNext.disabled = state.index >= state.frames.length - 1;
+  }
+
+  function positionRadarViewerSteps() {
+    if (radarViewerEl.hidden || !radarViewerImg.getAttribute('src')) return;
+    const stage = radarViewerStage.getBoundingClientRect();
+    const img = radarViewerImg.getBoundingClientRect();
+    const size = radarViewerPrev.offsetWidth || 40;
+    const inset = 8;
+    radarViewerPrev.style.left = `${Math.max(inset, Math.round(img.left - stage.left - size - 12))}px`;
+    radarViewerNext.style.right = `${Math.max(inset, Math.round(stage.right - img.right - size - 12))}px`;
+  }
+
+  function paintRadarViewer(state) {
+    if (radarViewerState !== state) return;
+    const frame = state.frames[state.index];
+    if (!frame) return;
+    radarViewerImg.src = frame.src;
+    radarViewerImg.alt = `${state.name} ${frame.stamp || ''}`.trim();
+    radarViewerTime.textContent = frame.clock || '—';
+    radarViewerTime.title = frame.stamp || '';
+    setRadarViewerPlayUi(state.playing);
+    syncRadarViewerSteps(state);
+    syncRadarViewerDots(state);
+    positionRadarViewerSteps();
+  }
+
+  function stepRadarViewer(step) {
+    const state = radarViewerState;
+    if (!state || !state.frames.length) return;
+    const next = state.index + step;
+    if (next < 0 || next >= state.frames.length) return;
+    stopRadarCardPlay(state);
+    state.index = next;
+    paintRadarFrame(state);
+  }
+
+  function openRadarViewer(state) {
+    if (!state || !state.frames.length) return;
+    if (radarViewerState === state && !radarViewerEl.hidden) return;
+    radarViewerState = state;
+    radarViewerName.textContent = state.name;
+    radarViewerTrack.innerHTML = radarViewerDotsHtml(state);
+    radarViewerEl.hidden = false;
+    document.body.classList.add('radar-viewer-open');
+    paintRadarViewer(state);
+    syncRadarViewerDots(state, false);
+    requestAnimationFrame(() => {
+      syncRadarViewerDots(state, false);
+      positionRadarViewerSteps();
+    });
+  }
+
+  function closeRadarViewer() {
+    if (radarViewerEl.hidden) return;
+    radarViewerEl.hidden = true;
+    radarViewerState = null;
+    radarViewerTrack.innerHTML = '';
+    radarViewerImg.removeAttribute('src');
+    radarViewerImg.alt = '';
+    document.body.classList.remove('radar-viewer-open');
+  }
+
+  function refreshRadarViewer(state) {
+    if (radarViewerState !== state) return;
+    if (!state.frames.length) {
+      closeRadarViewer();
+      return;
+    }
+    radarViewerTrack.innerHTML = radarViewerDotsHtml(state);
+    paintRadarViewer(state);
+    syncRadarViewerDots(state, false);
+  }
+
+  function applyRadarProduct(product) {
+    const state = radarBoard.cards.get(product.key);
+    if (!state) return;
+    state.seq += 1;
+    stopRadarCardPlay(state);
+    state.staleNote = '';
+    state.ready = false;
+    state.preload = null;
+    state.frames = !product.maintenance && !product.error && Array.isArray(product.frames) ? product.frames : [];
+    state.index = Math.max(0, state.frames.length - 1);
+    state.dotKey = '';
+    renderRadarDots(state);
+    refreshRadarViewer(state);
+    if (product.error) {
+      state.img.hidden = true;
+      state.time.textContent = '—';
+      state.play.disabled = true;
+      setRadarCardNote(state, '雷达数据加载失败');
+      return;
+    }
+    if (product.maintenance) {
+      state.img.hidden = true;
+      state.time.textContent = '—';
+      state.play.disabled = true;
+      setRadarCardNote(state, '雷达维护中，暂停更新');
+      return;
+    }
+    const latest = state.frames[state.frames.length - 1];
+    if (!latest) {
+      state.img.hidden = true;
+      state.play.disabled = true;
+      setRadarCardNote(state, '暂无雷达数据');
+      return;
+    }
+    state.img.hidden = false;
+    state.img.alt = `${product.name} ${latest.stamp || ''}`.trim();
+    state.img.src = latest.src;
+    state.time.textContent = latest.clock || '—';
+    state.time.title = latest.stamp || '';
+    state.play.disabled = false;
+    state.staleNote = product.stale ? '数据源未更新' : '';
+    setRadarCardNote(state, state.staleNote);
+  }
+
+  function preloadRadarFrames(state) {
+    if (state.ready) return Promise.resolve();
+    if (state.preload) return state.preload;
+    const total = state.frames.length;
+    const seq = state.seq;
+    let done = 0;
+    setRadarCardNote(state, `载入 0/${total}`);
+    const queue = state.frames.slice();
+    const loadOne = () => new Promise((resolve) => {
+      const item = queue.shift();
+      if (!item) return resolve();
+      const img = new Image();
+      img.onload = img.onerror = () => {
+        done += 1;
+        if (state.seq === seq) setRadarCardNote(state, `载入 ${done}/${total}`);
+        resolve();
+      };
+      img.src = item.src;
+    });
+    const worker = async () => {
+      while (queue.length) await loadOne();
+    };
+    state.preload = Promise.all(Array.from({ length: RADAR_LOAD_WIDTH }, worker))
+      .then(() => {
+        if (state.seq !== seq) return;
+        state.ready = true;
+        setRadarCardNote(state, state.staleNote);
+      })
+      .finally(() => {
+        state.preload = null;
+      });
+    return state.preload;
+  }
+
+  async function toggleRadarCardPlay(state) {
+    if (state.playing) return stopRadarCardPlay(state);
+    if (state.starting || !state.frames.length) return;
+    const seq = state.seq;
+    state.starting = true;
+    state.play.disabled = true;
+    try {
+      await preloadRadarFrames(state);
+      if (!state.frames.length || state.seq !== seq) return;
+      state.playing = true;
+      setRadarPlayUi(state, true);
+      state.timer = setInterval(() => {
+        state.index = (state.index + 1) % state.frames.length;
+        paintRadarFrame(state);
+      }, RADAR_FRAME_MS);
+    } finally {
+      state.starting = false;
+      state.play.disabled = !state.frames.length;
+    }
+  }
+
+  async function fetchRadarProducts(url) {
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !Array.isArray(data.products)) throw new Error('radar');
+    return data.products;
+  }
+
+  async function loadRadarBoard(force) {
+    if (radarBoard.loading) return;
+    radarBoard.loading = true;
+    radarRefreshEl.classList.add('is-spinning');
+    const suffix = force ? '?fresh=1' : '';
+    try {
+      const results = await Promise.allSettled(RADAR_SOURCES.map((source) => fetchRadarProducts(`${source.url}${suffix}`)));
+      if (results.every((result) => result.status === 'rejected')) throw new Error('radar');
+      const products = [];
+      results.forEach((result, i) => {
+        if (result.status === 'fulfilled') products.push(...result.value);
+        else RADAR_SOURCES[i].products.forEach((p) => products.push({ ...p, error: true, frames: [] }));
+      });
+      products.forEach(applyRadarProduct);
+      const stamps = products.map((p) => p.latest).filter(Boolean).sort();
+      const latest = stamps[stamps.length - 1] || '';
+      radarMetaEl.textContent = latest ? `广东多站雷达 · 更新 ${latest.slice(6)}` : '广东多站雷达 · 逐帧回放';
+    } catch (e) {
+      radarBoard.cards.forEach((state) => {
+        if (state.frames.length || state.playing) return;
+        state.img.hidden = true;
+        setRadarCardNote(state, '雷达数据加载失败');
+      });
+      radarMetaEl.textContent = '雷达数据加载失败';
+    } finally {
+      radarBoard.loading = false;
+      radarRefreshEl.classList.remove('is-spinning');
+    }
+  }
+
+  function startRadarBoard() {
+    renderRadarCards();
+    loadRadarBoard(false);
+    if (radarRefreshTimer) return;
+    radarRefreshTimer = setInterval(() => {
+      const busy = [...radarBoard.cards.values()].some((state) => state.playing);
+      if (!document.hidden && !busy) loadRadarBoard(false);
+    }, 3 * 60e3);
+  }
+
+  function radarNewsStateHtml(text, retry) {
+    return `<div class="radar-news-state">${text}${retry ? '<button type="button" class="radar-news-retry">重试</button>' : ''}</div>`;
+  }
+
+  function radarNewsRowHtml(item) {
+    return `<a class="radar-news-row" href="${escHtml(item.url)}" target="_blank" rel="noopener noreferrer">
+      <span class="radar-news-title">${escHtml(item.title)}</span>
+      <time class="radar-news-time">${escHtml(item.time)}</time>
+    </a>`;
+  }
+
+  async function loadRadarNewsPage(page) {
+    if (radarNews.loading) return;
+    radarNews.loading = true;
+    const retryRow = radarNewsListEl.querySelector('.radar-news-retry');
+    if (retryRow) retryRow.closest('.radar-news-state').remove();
+    if (!radarNewsListEl.querySelector('.radar-news-row')) {
+      radarNewsListEl.innerHTML = radarNewsStateHtml('正在获取资讯…', false);
+    }
+    try {
+      const res = await fetch(`/api/gd-news?page=${page}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data || !Array.isArray(data.items) || !data.items.length) throw new Error('news');
+      radarNews.page = data.page || page;
+      radarNews.totalPages = data.totalPages || 1;
+      radarNewsListEl.innerHTML = data.items.map(radarNewsRowHtml).join('');
+      radarNewsListEl.scrollTop = 0;
+      renderRadarPager();
+    } catch (e) {
+      radarNewsListEl.innerHTML = radarNewsStateHtml('资讯加载失败', true);
+      radarPagerEl.innerHTML = '';
+    } finally {
+      radarNews.loading = false;
+    }
+  }
+
+  function radarPagerItems(page, total) {
+    const wanted = new Set([1, total, page - 1, page, page + 1]);
+    if (page <= 3) [2, 3].forEach((n) => n < total && wanted.add(n));
+    if (page >= total - 2) [total - 1, total - 2, total - 3].forEach((n) => n > 1 && wanted.add(n));
+    const nums = [...wanted].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+    const out = [];
+    nums.forEach((n, i) => {
+      if (i && n - nums[i - 1] > 1) out.push(null);
+      out.push(n);
+    });
+    return out;
+  }
+
+  function renderRadarPager() {
+    const total = radarNews.totalPages;
+    const page = radarNews.page;
+    if (!(total > 1)) {
+      radarPagerEl.innerHTML = '';
+      return;
+    }
+    const arrow = (step, disabled, label) => `<button type="button" class="radar-page-btn radar-page-arrow" data-page="${page + step}" aria-label="${label}"${disabled ? ' disabled' : ''}>${step < 0 ? '‹' : '›'}</button>`;
+    radarPagerEl.innerHTML = arrow(-1, page <= 1, '上一页')
+      + radarPagerItems(page, total)
+        .map((n) => (n == null
+          ? '<span class="radar-page-gap">…</span>'
+          : `<button type="button" class="radar-page-btn${n === page ? ' active' : ''}" data-page="${n}">${n}</button>`))
+        .join('')
+      + arrow(1, page >= total, '下一页');
+  }
+
+  function startRadarNews() {
+    if (radarNews.started) return;
+    radarNews.started = true;
+    loadRadarNewsPage(1);
+  }
+
+  radarNewsListEl.addEventListener('click', (event) => {
+    if (!event.target.closest('.radar-news-retry')) return;
+    loadRadarNewsPage(radarNews.page || 1);
+  });
+
+  radarPagerEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('.radar-page-btn');
+    if (!btn || btn.disabled) return;
+    const page = Number(btn.dataset.page);
+    if (!page || page === radarNews.page) return;
+    loadRadarNewsPage(page);
+  });
+
+  radarGridEl.addEventListener('click', (event) => {
+    const dot = event.target.closest('.radar-dot');
+    if (dot) {
+      const card = dot.closest('.radar-card');
+      const state = card && radarBoard.cards.get(card.dataset.key);
+      if (!state) return;
+      stopRadarCardPlay(state);
+      state.index = Number(dot.dataset.i) || 0;
+      paintRadarFrame(state);
+      return;
+    }
+    const btn = event.target.closest('.radar-card-play');
+    if (btn) {
+      if (btn.disabled) return;
+      const card = btn.closest('.radar-card');
+      const state = card && radarBoard.cards.get(card.dataset.key);
+      if (state) toggleRadarCardPlay(state);
+      return;
+    }
+    const img = event.target.closest('.radar-frame-img');
+    if (img && !img.hidden) {
+      const card = img.closest('.radar-card');
+      const state = card && radarBoard.cards.get(card.dataset.key);
+      if (state) openRadarViewer(state);
+    }
+  });
+
+  radarViewerPlay.addEventListener('click', () => {
+    if (radarViewerState) toggleRadarCardPlay(radarViewerState);
+  });
+
+  radarViewerDots.addEventListener('click', (event) => {
+    const dot = event.target.closest('.radar-viewer-dot');
+    const state = radarViewerState;
+    if (!dot || !state) return;
+    stopRadarCardPlay(state);
+    state.index = Number(dot.dataset.i) || 0;
+    paintRadarFrame(state);
+  });
+
+  radarViewerClose.addEventListener('click', closeRadarViewer);
+  radarViewerPrev.addEventListener('click', () => stepRadarViewer(-1));
+  radarViewerNext.addEventListener('click', () => stepRadarViewer(1));
+
+  radarViewerStage.addEventListener('click', (event) => {
+    if (event.target.closest('.radar-viewer-step')) return;
+    if (event.target === radarViewerImg) return;
+    closeRadarViewer();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || radarViewerEl.hidden) return;
+    closeRadarViewer();
+  });
+
+  window.addEventListener('resize', () => {
+    if (!radarViewerState || radarViewerEl.hidden) return;
+    syncRadarViewerDots(radarViewerState, false);
+    positionRadarViewerSteps();
+  });
+
+  radarViewerImg.addEventListener('load', positionRadarViewerSteps);
+
+  radarRefreshEl.addEventListener('click', () => {
+    radarBoard.cards.forEach(stopRadarCardPlay);
+    loadRadarBoard(true);
+  });
 
   /* ---------------- earthquake page ---------------- */
   const QUAKE_CENC = 'https://api.wolfx.jp/cenc_eqlist.json';
@@ -2075,7 +2925,7 @@
               formatter: (p) => (p.value[2] >= 5 ? `M${p.value[2].toFixed(1)}` : ''),
               position: 'right',
               color: '#37505f',
-              fontSize: 10.5,
+              fontSize: isMobile() ? 10.5 : 11.5,
               fontWeight: 700,
             },
             emphasis: { scale: 1.25 },
@@ -2775,11 +3625,11 @@
       <div class="st-charts">
         <section class="st-card">
           <h4>近 24 小时气温 <span>°C</span></h4>
-          ${lineChart(hourly, 't', { color: '#ef9a5c', id: 'temp' })}
+          ${lineChart(hourly, 't', { color: '#ef9a5c', id: 'temp', unit: '°C' })}
         </section>
         <section class="st-card">
           <h4>近 24 小时风速 <span>m/s</span></h4>
-          ${lineChart(hourly, 'wind', { color: '#3aa3a8', id: 'wind' })}
+          ${lineChart(hourly, 'wind', { color: '#3aa3a8', id: 'wind', unit: 'm/s' })}
         </section>
       </div>
       <section class="st-card st-rain">
@@ -2828,23 +3678,35 @@
           `<text x="${i === 0 ? L : i === 1 ? W / 2 : W - R}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === 1 ? 'middle' : 'end'}">${t}</text>`
       )
       .join('');
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="grad-${opts.id}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="${opts.color}" stop-opacity=".26" />
-          <stop offset="100%" stop-color="${opts.color}" stop-opacity=".02" />
-        </linearGradient>
-      </defs>
-      <line x1="${L}" y1="${T}" x2="${W - R}" y2="${T}" stroke="rgba(20,60,80,.06)" />
-      <line x1="${L}" y1="${(T + H - B) / 2}" x2="${W - R}" y2="${(T + H - B) / 2}" stroke="rgba(20,60,80,.05)" stroke-dasharray="3 4" />
-      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="rgba(20,60,80,.1)" />
-      <path d="${area}" fill="url(#grad-${opts.id})" />
-      <path d="${line}" fill="none" stroke="${opts.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-      <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last[field]).toFixed(1)}" r="3.4" fill="#fff" stroke="${opts.color}" stroke-width="2.2" />
-      <text x="${W - R}" y="${T - 4}" text-anchor="end">最大 ${Math.max(...values).toFixed(dec)}</text>
-      <text x="${L}" y="${T - 4}" text-anchor="start">最小 ${Math.min(...values).toFixed(dec)}</text>
-      ${labels}
-    </svg>`;
+    const hits = pts
+      .map((p, i) => {
+        const left = i === 0 ? 0 : ((x(i - 1) + x(i)) / 2 / W) * 100;
+        const right = i === pts.length - 1 ? 100 : ((x(i) + x(i + 1)) / 2 / W) * 100;
+        return `<i class="st-hit" style="left:${left.toFixed(2)}%;width:${(right - left).toFixed(2)}%" data-label="${p.time}" data-value="${p[field].toFixed(dec)}" data-unit="${opts.unit || ''}" data-x="${((x(i) / W) * 100).toFixed(2)}" data-y="${((y(p[field]) / H) * 100).toFixed(2)}"></i>`;
+      })
+      .join('');
+    return `<div class="st-spark" style="--spark:${opts.color}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="grad-${opts.id}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${opts.color}" stop-opacity=".26" />
+            <stop offset="100%" stop-color="${opts.color}" stop-opacity=".02" />
+          </linearGradient>
+        </defs>
+        <line x1="${L}" y1="${T}" x2="${W - R}" y2="${T}" stroke="rgba(20,60,80,.06)" />
+        <line x1="${L}" y1="${(T + H - B) / 2}" x2="${W - R}" y2="${(T + H - B) / 2}" stroke="rgba(20,60,80,.05)" stroke-dasharray="3 4" />
+        <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="rgba(20,60,80,.1)" />
+        <path d="${area}" fill="url(#grad-${opts.id})" />
+        <path d="${line}" fill="none" stroke="${opts.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last[field]).toFixed(1)}" r="3.4" fill="#fff" stroke="${opts.color}" stroke-width="2.2" />
+        <text x="${W - R}" y="${T - 4}" text-anchor="end">最大 ${Math.max(...values).toFixed(dec)}</text>
+        <text x="${L}" y="${T - 4}" text-anchor="start">最小 ${Math.min(...values).toFixed(dec)}</text>
+        ${labels}
+      </svg>
+      <span class="st-spark-dot" hidden></span>
+      <div class="st-spark-tip" hidden></div>
+      <div class="st-hits">${hits}</div>
+    </div>`;
   }
 
   function rainChart(hourly) {
@@ -2874,13 +3736,110 @@
         `<text x="${(L + gap * i + gap / 2).toFixed(1)}" y="${H - 5}" text-anchor="${i === 0 ? 'start' : i === bars.length - 1 ? 'end' : 'middle'}">${bars[i].time}</text>`
     ).join('');
     const emptyText = total <= 0.05 ? `<text x="${W / 2}" y="${(H - T - B) / 2 + 4}" text-anchor="middle" fill="#93a6b2">过去 24 小时无明显降水</text>` : '';
-    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="rgba(20,60,80,.12)" />
-      ${rects}
-      ${ticks}
-      ${emptyText}
-    </svg>`;
+    const hits = bars
+      .map((b, i) => {
+        const h = b.v > 0 ? Math.max(3, ((H - T - B) * b.v) / max) : 2;
+        return `<i class="st-hit" style="left:${(((L + gap * i) / W) * 100).toFixed(2)}%;width:${((gap / W) * 100).toFixed(2)}%" data-label="${b.time}" data-value="${fix1(b.v)}" data-unit="mm" data-x="${(((L + gap * i + gap / 2) / W) * 100).toFixed(2)}" data-y="${(((H - B - h) / H) * 100).toFixed(2)}"></i>`;
+      })
+      .join('');
+    return `<div class="st-spark st-spark-rain" style="--spark:#3a8cc8">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="rgba(20,60,80,.12)" />
+        ${rects}
+        ${ticks}
+        ${emptyText}
+      </svg>
+      <div class="st-spark-tip" hidden></div>
+      <div class="st-hits">${hits}</div>
+    </div>`;
   }
+
+  function hideSparkTip(wrap) {
+    wrap.classList.remove('is-active');
+    wrap.querySelectorAll('.st-hit.is-active').forEach((el) => el.classList.remove('is-active'));
+    const tip = wrap.querySelector('.st-spark-tip');
+    const dot = wrap.querySelector('.st-spark-dot');
+    if (tip) tip.hidden = true;
+    if (dot) dot.hidden = true;
+  }
+
+  function showSparkTip(hit) {
+    const wrap = hit.closest('.st-spark');
+    if (!wrap) return;
+    document.querySelectorAll('.st-spark.is-active').forEach((el) => {
+      if (el !== wrap) hideSparkTip(el);
+    });
+    wrap.querySelectorAll('.st-hit.is-active').forEach((el) => el.classList.remove('is-active'));
+    hit.classList.add('is-active');
+    const tip = wrap.querySelector('.st-spark-tip');
+    const dot = wrap.querySelector('.st-spark-dot');
+    const rect = wrap.getBoundingClientRect();
+    const px = (parseFloat(hit.dataset.x) / 100) * rect.width;
+    const py = (parseFloat(hit.dataset.y) / 100) * rect.height;
+    const unit = hit.dataset.unit ? `<em>${hit.dataset.unit}</em>` : '';
+    tip.innerHTML = `<b>${hit.dataset.label}</b><span>${hit.dataset.value}${unit}</span>`;
+    tip.hidden = false;
+    wrap.classList.add('is-active');
+    if (dot) {
+      dot.hidden = false;
+      dot.style.left = `${px}px`;
+      dot.style.top = `${py}px`;
+    }
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    const left = Math.min(Math.max(px, tw / 2 + 2), Math.max(rect.width - tw / 2 - 2, tw / 2 + 2));
+    tip.style.left = `${left}px`;
+    const above = py - th - 10 >= 0;
+    tip.style.top = `${above ? py : py + 12}px`;
+    tip.classList.toggle('is-below', !above);
+  }
+
+  // 触屏点按后保持提示，松手不消失；滚动或点空白处再收起
+  let sparkPinned = false;
+
+  function hideSparkTips() {
+    document.querySelectorAll('.st-spark.is-active').forEach(hideSparkTip);
+  }
+
+  sheetBody.addEventListener('pointermove', (event) => {
+    // 触屏指针会被隐式捕获在起始元素上，拖动时要用坐标重新判定落在哪一小时
+    const node = event.pointerType === 'mouse'
+      ? event.target
+      : document.elementFromPoint(event.clientX, event.clientY);
+    const hit = node && node.closest ? node.closest('.st-hit') : null;
+    if (hit) {
+      showSparkTip(hit);
+      return;
+    }
+    if (event.pointerType === 'mouse') hideSparkTips();
+  });
+  sheetBody.addEventListener('pointerdown', (event) => {
+    const hit = event.target.closest ? event.target.closest('.st-hit') : null;
+    if (hit) {
+      if (event.pointerType !== 'mouse') sparkPinned = true;
+      showSparkTip(hit);
+      return;
+    }
+    sparkPinned = false;
+    hideSparkTips();
+  });
+  // 抬手时按最终坐标再确认一次，快速滑动停下也能停在对准的那一小时
+  sheetBody.addEventListener('pointerup', (event) => {
+    if (event.pointerType === 'mouse' || !sparkPinned) return;
+    const node = document.elementFromPoint(event.clientX, event.clientY);
+    const hit = node && node.closest ? node.closest('.st-hit') : null;
+    if (hit) showSparkTip(hit);
+  });
+  sheetBody.addEventListener('pointerleave', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    sparkPinned = false;
+    hideSparkTips();
+  });
+  sheetBody.addEventListener('scroll', () => {
+    if (!sparkPinned) return;
+    sparkPinned = false;
+    hideSparkTips();
+  });
 
   const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   function weekList(days) {
@@ -2897,12 +3856,13 @@
         const isToday = dt.toDateString() === today.toDateString();
         const dateLabel = `${dt.getMonth() + 1}/${dt.getDate()}`;
         const dayLabel = isToday ? '今天' : i === 1 ? '明天' : WEEKDAYS[dt.getDay()];
-        const left = d.tmin == null ? 0 : ((d.tmin - wmin) / span) * 100;
-        const width = d.tmax == null || d.tmin == null ? 8 : Math.max(8, ((d.tmax - d.tmin) / span) * 100);
+        const valid = d.tmax != null && d.tmin != null;
+        const left = !valid ? 0 : ((d.tmin - wmin) / span) * 100;
+        const width = !valid ? 0 : Math.max(8, ((d.tmax - d.tmin) / span) * 100);
         return `<li>
           <span class="day"><b>${dayLabel}</b>${dateLabel}</span>
           <span class="icon">${iconSvg(null, d.dayText)}</span>
-          <span class="range"><i style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i></span>
+          <span class="range">${valid ? `<i style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%"></i>` : ''}</span>
           <span class="temps"><b>${d.tmax == null ? '—' : d.tmax}°</b><span>${d.tmin == null ? '—' : d.tmin}°</span></span>
         </li>`;
       })
@@ -2910,7 +3870,7 @@
   }
 
   /* ---------------- live data ---------------- */
-  const CACHE_KEY = 'huanan-nmc-v1';
+  const CACHE_KEY = 'huanan-nmc-v4';
   const CACHE_TTL = 10 * 60 * 1000;
 
   function readCache() {
@@ -2956,6 +3916,15 @@
     const nightW = (today.night && today.night.weather) || {};
     const rawPassed = (d.passedchart && d.passedchart[0]) || {};
     const sun = real.sunriseSunset || {};
+    // 当日最高温缺测（9999）时，用当天逐小时实况的最高值兜底
+    const todayKey = String(real.publish_time || '').slice(0, 10);
+    const todayMax = (d.passedchart || [])
+      .filter((p) => p && p.time && String(p.time).slice(0, 10) === todayKey)
+      .map((p) => num(p.temperature))
+      .filter((v) => v != null)
+      .reduce((a, v) => Math.max(a, v), -Infinity);
+    // 实况最高温直接截掉小数位，只留整数部分，不做四舍五入
+    const obsTodayMax = Number.isFinite(todayMax) ? Math.trunc(todayMax) : null;
     return {
       station: stationCode,
       stationName,
@@ -2974,8 +3943,8 @@
       pressure: num(rawPassed.pressure) != null ? num(rawPassed.pressure) : num(weather.airpressure),
       sunrise: sun.sunrise && sun.sunrise !== '9999' ? sun.sunrise : '',
       sunset: sun.sunset && sun.sunset !== '9999' ? sun.sunset : '',
-      tmax: Number(dayW.temperature) || null,
-      tmin: Number(nightW.temperature) || null,
+      tmax: dailyTemp(dayW.temperature) ?? obsTodayMax,
+      tmin: dailyTemp(nightW.temperature),
       precipToday: num(today.precipitation),
       hourly: passed,
       alert:
@@ -2988,8 +3957,8 @@
         nightText: (p.night && p.night.weather && p.night.weather.info) || '',
         dayImg: (p.day && p.day.weather && p.day.weather.img) || '',
         nightImg: (p.night && p.night.weather && p.night.weather.img) || '',
-        tmax: Number(p.day && p.day.weather && p.day.weather.temperature) || null,
-        tmin: Number(p.night && p.night.weather && p.night.weather.temperature) || null,
+        tmax: dailyTemp(p.day && p.day.weather && p.day.weather.temperature) ?? (p.date === todayKey ? obsTodayMax : null),
+        tmin: dailyTemp(p.night && p.night.weather && p.night.weather.temperature),
       })),
     };
   }

@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "snapshot": "node scripts/fetch-nmc.js",
+    "cold-air": "node scripts/fetch-cold-air.js",
+    "test:cold": "node scripts/test-cold-air.js",
     "geo": "node scripts/build-geo.js",
     "shot": "node scripts/shot.js",
     "test:ui": "node scripts/test-ui.js"
