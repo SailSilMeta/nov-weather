@@ -519,23 +519,25 @@ button { font: inherit; color: inherit; }
   border-left: 4.5px solid transparent; border-right: 4.5px solid transparent;
   border-bottom: 7px solid #ffab2e;
 }
-/* 南下进度条：蓝=已抵达，灰=未抵达；过半的一段标白字百分比 */
+/* 南下进度条：蓝=已抵达，灰=未抵达；居中白字显示已抵达占比 */
 .cold-legend .cold-ratio {
+  position: relative;
   display: flex; width: 100%; margin-top: 2px;
   height: clamp(13px, calc(0.6cqw + 10px), 15px);
   border-radius: 999px; overflow: hidden;
   background: #9b9b9b;
 }
-.cold-legend .cold-ratio-seg {
-  display: flex; align-items: center; justify-content: center;
-  height: 100%; overflow: hidden;
-  font-style: normal; font-weight: 800; line-height: 1;
-  color: #fff; font-variant-numeric: tabular-nums;
-  font-size: clamp(8.5px, calc(0.8cqw + 6px), 10px);
-  transition: width .3s ease;
-}
+.cold-legend .cold-ratio-seg { height: 100%; transition: width .3s ease; }
 .cold-legend .cold-ratio-seg.is-arrived { background: #3f8fd6; }
 .cold-legend .cold-ratio-seg.is-pending { background: #9b9b9b; }
+.cold-legend .cold-ratio-num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; line-height: 1; color: #fff;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(8.5px, calc(0.8cqw + 6px), 10px);
+  pointer-events: none;
+}
 .cold-legend .cold-ratio-label {
   width: 100%; margin-top: 3px; text-align: center;
   font-size: inherit;

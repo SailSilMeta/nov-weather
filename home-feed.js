@@ -555,7 +555,7 @@
       ctx.fillText(text, u(x0 + (kind === 'tri' ? 13 : 12)), u(y + rowH / 2));
     });
 
-    // 进度条与图例同宽：蓝=已抵达、灰=未抵达，占比 ≥50% 的一段标白字百分比
+    // 进度条与图例同宽：蓝=已抵达、灰=未抵达，居中白字显示已抵达占比
     const barTop = y0 + 3 * (rowH + gap) + 2;
     const barH = 15;
     ctx.save();
@@ -569,12 +569,7 @@
     ctx.font = `800 ${u(10)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    if (stats.arrivedPct >= 50) {
-      ctx.fillText(`${stats.arrivedPct}%`, u(x0 + (contentW * stats.arrivedPct) / 200), u(barTop + barH / 2));
-    }
-    if (stats.pendingPct >= 50) {
-      ctx.fillText(`${stats.pendingPct}%`, u(x0 + contentW - (contentW * stats.pendingPct) / 200), u(barTop + barH / 2));
-    }
+    ctx.fillText(`${stats.arrivedPct}%`, u(x0 + contentW / 2), u(barTop + barH / 2));
     ctx.font = `700 ${u(13)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
     ctx.fillStyle = '#55707f';
     ctx.fillText('冷空气南下进度条', u(x0 + contentW / 2), u(barTop + barH + 3 + 17 / 2));
@@ -816,15 +811,14 @@
       const total = arrivedCities.length + pendingCities.length;
       const arrivedPct = total ? Math.round((arrivedCities.length / total) * 100) : 0;
       const pendingPct = total ? 100 - arrivedPct : 0;
-      // 只有占比 ≥50% 的一段放得下数字，小于一半的不标
-      const pctText = (pct) => (pct >= 50 ? `${pct}%` : '');
       legendEl.innerHTML = [
         `<span class="cold-key">${dot('dot is-blue')}已抵达 ${arrivedCities.length}</span>`,
         `<span class="cold-key">${dot('dot is-grey')}待抵达 ${pendingCities.length}</span>`,
         `<span class="cold-key"><i class="tri"></i>南岭关口 ${gatePassed}/4</span>`,
         `<span class="cold-ratio" role="img" aria-label="冷空气南下进度：已抵达 ${arrivedPct}%，待抵达 ${pendingPct}%">`,
-        `<i class="cold-ratio-seg is-arrived" style="width:${arrivedPct}%">${pctText(arrivedPct)}</i>`,
-        `<i class="cold-ratio-seg is-pending" style="width:${pendingPct}%">${pctText(pendingPct)}</i>`,
+        `<i class="cold-ratio-seg is-arrived" style="width:${arrivedPct}%"></i>`,
+        `<i class="cold-ratio-seg is-pending" style="width:${pendingPct}%"></i>`,
+        `<b class="cold-ratio-num">${arrivedPct}%</b>`,
         `</span>`,
         `<span class="cold-ratio-label">冷空气南下进度条</span>`,
       ].join('');
