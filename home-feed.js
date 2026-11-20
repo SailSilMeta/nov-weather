@@ -409,7 +409,7 @@
       if (wind) {
         const reading = windReading(String(feature.properties.adcode));
         const label = {
-          show: reading.north, formatter: short,
+          show: reading.valid, formatter: short,
           color: '#ffffff', textBorderColor: 'rgba(0, 0, 0, .45)',
         };
         return {
