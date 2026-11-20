@@ -14,6 +14,7 @@
     { key: 'rain', name: '暴雨', aliases: ['暴雨'], tone: '#2f6fa8', icon: 'rain', scene: 'rain' },
     { key: 'cold', name: '寒潮 / 寒冷', aliases: ['寒潮', '寒冷'], tone: '#5a86a8', icon: 'cold', scene: 'cold' },
     { key: 'wind', name: '大风 / 雷雨大风', aliases: ['海上雷雨大风', '雷雨大风', '海上大风', '大风'], tone: '#5f8b9e', icon: 'wind', scene: 'wind' },
+    { key: 'monsoon', name: '强季风（珠海）', aliases: ['强季风'], tone: '#5f8b9e', icon: 'wind', scene: 'wind' },
     { key: 'heat', name: '高温', aliases: ['高温'], tone: '#c56a23', icon: 'heat', scene: 'heat' },
     { key: 'drought', name: '干旱', aliases: ['干旱'], tone: '#a67b3b', icon: 'drought', scene: 'drought' },
     { key: 'fire', name: '森林火险', aliases: ['森林草原火险', '森林火险', '草原火险', '火险'], tone: '#b5472b', icon: 'fire', scene: 'fire' },
@@ -94,6 +95,8 @@
     sheetCity: 'all',
     sheetLevel: 'all',
     hkmo: null,
+    zhuhai: null,
+    zhuhaiNote: '',
   };
   const pageEl = $('#warningPage');
   const listEl = $('#warningList');
@@ -279,6 +282,7 @@
   }
 
   function countText(group, list) {
+    if (group.key === 'monsoon' && state.zhuhai?.error) return list.length ? `${list.length} 条 · 上次数据` : '数据暂不可用';
     if (!group.alerts.length) return '待机';
     return `${list.length} 条 · 预 警`;
   }
@@ -474,7 +478,7 @@
         ${active && !list.length ? `<div class="wcard-empty"><span>${esc(filterName(group.key))}暂无此类预警</span></div>` : ''}
       </div>
       <div class="wcard-bar"><span class="wcard-count">${esc(countText(group, list))}</span><button class="wcard-detail" type="button" data-type-detail="${group.key}" aria-label="查看${esc(group.name)}的全部预警地点">详情<b>${list.length}</b></button></div>
-      ${active ? '' : '<div class="wcard-idle"><span>本轮暂无预警</span></div>'}
+      ${active ? '' : `<div class="wcard-idle"><span>${group.key === 'monsoon' && state.zhuhai?.error ? '强季风数据暂不可用' : '本轮暂无预警'}</span></div>`}
     </article>`;
   }
 
@@ -532,11 +536,11 @@
     const activeTypes = state.groups.filter((g) => g.alerts.length).length;
     $('#warningTotal').textContent = String(total);
     $('#warningTypes').textContent = String(activeTypes);
-    $('#warningSource').textContent = state.source;
+    $('#warningSource').textContent = [state.source, state.zhuhaiNote].filter(Boolean).join(' / ');
     $('#warningUpdated').textContent = state.updatedAt ? `更新 ${fmtClock(state.updatedAt)}` : '连接中…';
     const banner = total
       ? ''
-      : '<div class="warning-empty-all">当前五省暂无生效预警，所有扶梯处于待机状态。</div>';
+      : `<div class="warning-empty-all">${state.zhuhai?.error ? '珠海强季风数据暂不可用，其余已获取数据暂无生效预警。' : '当前五省暂无生效预警，所有扶梯处于待机状态。'}</div>`;
     listEl.innerHTML = banner + state.groups.map(cardHtml).join('');
     listEl.querySelectorAll('.wcard').forEach(paintCard);
     notifyUpdate();
@@ -657,6 +661,139 @@
 
   const HKMO_API = 'api/warning-hkmo';
   const HKMO_MOCK = new URLSearchParams(location.search).get('hkmoMock') === '1';
+  const HK_WARNING_URL = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=sc';
+  const MO_WARNING_URL = 'https://www.smg.gov.mo/smg/zawarning/index.php';
+  const ZH_WARNING_URL = 'https://weather.zhuhai.gov.cn/met';
+  const HKMO_REGIONS = [
+    { key: 'hk', name: '香港', source: '香港天文台', url: 'https://www.hko.gov.hk/sc/wxinfo/dailywx/wxwarntoday.htm' },
+    { key: 'mo', name: '澳门', source: '澳门地球物理气象局', url: MO_WARNING_URL },
+  ];
+  const HK_WARNING_CODES = {
+    TC1: ['tc1', '一号戒备信号'], TC3: ['tc3', '三号强风信号'],
+    TC8NE: ['tc8ne', '八号东北烈风或暴风信号'], TC8NW: ['tc8nw', '八号西北烈风或暴风信号'],
+    TC8SE: ['tc8se', '八号东南烈风或暴风信号'], TC8SW: ['tc8sw', '八号西南烈风或暴风信号'],
+    TC9: ['tc9', '九号烈风或暴风风力增强信号'], TC10: ['tc10', '十号飓风信号'],
+    WRAINA: ['raina', '黄色暴雨警告信号'], WRAINR: ['rainr', '红色暴雨警告信号'], WRAINB: ['rainb', '黑色暴雨警告信号'],
+    WFIREY: ['firey', '火灾危险警告（黄色）'], WFIRER: ['firer', '火灾危险警告（红色）'],
+    WTS: ['ts'], WCOLD: ['cold'], WHOT: ['vhot'], WMSGNL: ['msn'],
+    WL: ['landslip'], WFROST: ['frost'], WFL: ['ntfl'], WTMW: ['tsunami-warn'],
+  };
+
+  async function fetchOfficial(url, format = 'json') {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(url, { cache: 'no-store', credentials: 'omit', signal: ctrl.signal });
+      if (!res.ok) throw new Error(`official warning ${res.status}`);
+      return await (format === 'text' ? res.text() : res.json());
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function simplifiedSignal(value) {
+    const traditional = '號風黃紅熱帶氣強報別凍傾瀉災險嘯廣東備颶陸門邊灣島預現時無訊稱轉懸掛級區電閃視';
+    const simplified = '号风黄红热带气强报别冻倾泻灾险啸广东备飓陆门边湾岛预现时无讯称转悬挂级区电闪视';
+    return String(value || '').replace(/\s+/g, ' ').trim()
+      .replace(/[號風黃紅熱帶氣強報別凍傾瀉災險嘯廣東備颶陸門邊灣島預現時無訊稱轉懸掛級區電閃視]/g, (c) => simplified[traditional.indexOf(c)])
+      .replace(/\b(10|[1389])(?=号)/g, (n) => ({ 1: '一', 3: '三', 8: '八', 9: '九', 10: '十' }[n]));
+  }
+
+  function officialSignal(name, ts, icon = '') {
+    let rank = 20;
+    let tone = '#64748b';
+    const bands = [
+      [/十号/, 90, '#991b1b'], [/九号/, 80, '#b91c1c'], [/八号/, 70, '#ea580c'],
+      [/黑色/, 60, '#1f2937'], [/红色/, 50, '#dc2626'], [/橙色/, 45, '#ea580c'],
+      [/三号|黄色/, 40, '#eab308'], [/一号|蓝色/, 30, '#3b82f6'],
+      [/雷暴|闪电/, 20, '#6a5f9e'], [/寒冷/, 20, '#2563eb'], [/酷热/, 20, '#c56a23'],
+      [/霜冻/, 20, '#6a9db5'], [/山泥倾泻/, 20, '#8a5a3a'], [/火灾/, 20, '#b5472b'],
+      [/季候风/, 30, '#5f8b9e'], [/水浸|风暴潮/, 20, '#2f6fa8'], [/海啸/, 20, '#0f766e'],
+    ];
+    const band = bands.find(([pattern]) => pattern.test(name));
+    if (band) [, rank, tone] = band;
+    return { name, ts, clock: ts ? fmtClock(ts) : '', rank, tone, icon };
+  }
+
+  function parseHkWarnings(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('HK warning payload');
+    const items = [];
+    let updated = 0;
+    for (const row of Object.values(data)) {
+      if (!row || typeof row.name !== 'string' || typeof row.code !== 'string' || !Date.parse(row.issueTime)) throw new Error('HK warning row');
+      updated = Math.max(updated, Date.parse(row.updateTime) || Date.parse(row.issueTime));
+      if (row.actionCode === 'CANCEL' || (row.expireTime && Date.parse(row.expireTime) <= Date.now())) continue;
+      const code = HK_WARNING_CODES[row.code];
+      const name = code && code[1] ? code[1] : simplifiedSignal(row.name);
+      const icon = code ? `assets/hk-signals/${code[0]}.gif` : '';
+      items.push(officialSignal(name, Date.parse(row.issueTime), icon));
+    }
+    items.sort((a, b) => b.rank - a.rank || b.ts - a.ts);
+    return { ...HKMO_REGIONS[0], updatedAt: updated ? fmtClock(updated) : '', items };
+  }
+
+  function parseMoWarnings(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const section = [...doc.querySelectorAll('.container__section')]
+      .find((node) => /澳[门門]/.test(node.querySelector('.section__title')?.textContent || ''));
+    if (!section) throw new Error('Macau warning section');
+    const empty = section.querySelector('.contentList__item.-no-detail');
+    const rows = [...section.querySelectorAll('.contentList__item[data-type]')];
+    if (!rows.length && (!empty || !/現時沒有預警|现时没有预警|現時並無警告/.test(empty.textContent))) throw new Error('Macau warning payload');
+    const items = rows.map((node) => {
+      const name = simplifiedSignal(node.textContent || node.getAttribute('data-description'));
+      if (!name) throw new Error('Macau warning name');
+      const ts = parseTime(node.getAttribute('data-issuedat'));
+      const src = node.querySelector('img')?.getAttribute('src');
+      const url = src ? new URL(src, MO_WARNING_URL) : null;
+      const icon = url && /(^|\.)(smg|dsmg)\.gov\.mo$/.test(url.hostname) && /^https?:$/.test(url.protocol)
+        ? url.href.replace(/^http:/, 'https:') : '';
+      return officialSignal(name, ts, icon);
+    });
+    items.sort((a, b) => b.rank - a.rank || b.ts - a.ts);
+    const updated = (doc.querySelector('.footer__updateTime')?.textContent || '').match(/\d{1,2}:\d{2}/);
+    return { ...HKMO_REGIONS[1], updatedAt: updated ? updated[0] : '', items };
+  }
+
+  async function loadOfficialHkMo() {
+    const results = await Promise.allSettled([
+      fetchOfficial(HK_WARNING_URL).then(parseHkWarnings),
+      fetchOfficial(MO_WARNING_URL, 'text').then(parseMoWarnings),
+    ]);
+    return {
+      fetchedAt: new Date().toISOString(),
+      regions: results.map((result, i) => result.status === 'fulfilled'
+        ? result.value : { ...HKMO_REGIONS[i], error: true, updatedAt: '', items: [] }),
+    };
+  }
+
+  async function loadZhuhaiMonsoon() {
+    try {
+      const data = await fetchOfficial(ZH_WARNING_URL);
+      if (!Array.isArray(data?.currentWxWarnings?.issueds)) throw new Error('Zhuhai warning payload');
+      const alerts = [];
+      for (const row of data.currentWxWarnings.issueds) {
+        if (row.signal !== '强季风') continue;
+        const ts = Number(row.issuingDt);
+        if (row.level !== '黄色' || !Number.isFinite(ts) || ts <= 0 || typeof row.districts !== 'string' || !row.districts.trim()) throw new Error('Zhuhai monsoon row');
+        for (const area of row.districts.split(/[、，,]/).map((part) => part.trim()).filter(Boolean)) {
+          const place = /^(全市|珠海市)$/.test(area) ? '珠海市' : `珠海市 · ${area}`;
+          const type = TYPE_DEFS.find((def) => def.key === 'monsoon');
+          alerts.push({
+            id: `zh-monsoon-${area}-${ts}`, title: `${place}强季风黄色预警`, place, province: '广东省',
+            typeKey: type.key, typeName: '强季风', tone: type.tone, icon: type.icon, scene: type.scene,
+            levelKey: 'yellow', levelLabel: '黄色', levelRank: 2, levelGrade: LEVELS.yellow.grade, ts,
+            source: 'zhuhai', publisher: '珠海市气象台', url: 'https://weather.zhuhai.gov.cn/',
+            scopeOnly: !['全市', '珠海市', '香洲区', '斗门区', '金湾区'].includes(area),
+            text: `生效区域：${area}。预计6小时内可能受或者已经受强烈季候风影响，平均风力6级以上，或者阵风8级以上。以官方最新发布和解除信息为准。`,
+          });
+        }
+      }
+      return { alerts: dedupe(alerts), error: false };
+    } catch (e) {
+      return { alerts: [], error: true };
+    }
+  }
 
   function readRadarToken() {
     try {
@@ -717,25 +854,23 @@
     hkmoState.loading = true;
     try {
       const token = HKMO_MOCK ? readRadarToken() : '';
-      const useMock = Boolean(token);
-      const query = useMock ? '?mock=1' : force ? '?fresh=1' : '';
-      const headers = useMock ? { Authorization: `Bearer ${token}` } : undefined;
-      const res = await fetch(`${HKMO_API}${query}`, { cache: 'no-store', headers });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data) throw new Error('hkmo');
-      hkmoState.at = Date.now();
+      let data;
+      if (token) {
+        const res = await fetch(`${HKMO_API}?mock=1`, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+        data = await res.json();
+        if (!res.ok || !Array.isArray(data?.regions)) throw new Error('hkmo mock');
+      } else {
+        data = await loadOfficialHkMo();
+      }
+      hkmoState.at = data.regions.some((region) => region.error) ? 0 : Date.now();
       state.hkmo = data;
       renderHkMo(data);
       window.dispatchEvent(new CustomEvent('warning:hkmo', { detail: data }));
     } catch (e) {
-      if (!hkmoState.at) {
-        renderHkMo({
-          regions: [
-            { key: 'hk', name: '香港', source: '香港天文台', url: 'https://www.hko.gov.hk/sc/wxinfo/dailywx/wxwarntoday.htm', error: true, items: [] },
-            { key: 'mo', name: '澳门', source: '澳门地球物理气象局', url: 'https://www.dsmg.gov.mo/zh-hant/zawarning', error: true, items: [] },
-          ],
-        });
-      }
+      hkmoState.at = 0;
+      state.hkmo = { regions: HKMO_REGIONS.map((region) => ({ ...region, error: true, items: [] })) };
+      renderHkMo(state.hkmo);
+      window.dispatchEvent(new CustomEvent('warning:hkmo', { detail: state.hkmo }));
     } finally {
       hkmoState.loading = false;
     }
@@ -771,6 +906,7 @@
     if (!state.alerts.length) renderLoading();
     const snapshotPromise = loadSnapshot();
     const gdPromise = loadGdFire();
+    const zhuhaiPromise = loadZhuhaiMonsoon();
     try {
       const first = await fetchNmcPage(1);
       const totalPages = Math.min(MAX_PAGES, Number(first.totalPage) || 1);
@@ -817,9 +953,17 @@
         renderError();
       }
     } finally {
+      const zhuhai = await zhuhaiPromise;
       if (seq === state.seq) {
+        if (zhuhai.error) zhuhai.alerts = state.zhuhai?.alerts || [];
+        state.zhuhai = zhuhai;
+        state.zhuhaiNote = zhuhai.error
+          ? `珠海强季风更新失败${zhuhai.alerts.length ? '（显示上次数据）' : ''}` : '珠海市气象台';
+        state.alerts = dedupe(state.alerts.filter((alert) => alert.source !== 'zhuhai').concat(zhuhai.alerts));
+        state.groups = groupAlerts(state.alerts);
         state.loading = false;
-        notifyUpdate();
+        if (state.alerts.length || state.lastLoad) render();
+        else notifyUpdate();
       }
     }
   }
@@ -839,7 +983,7 @@
     const fileLink = detail && detail.fileName ? `https://www.weather.com.cn/alarm/newalarmcontent.shtml?file=${encodeURIComponent(detail.fileName)}` : '';
     const official = alert.publisher ? (alert.url || fileLink) : (fileLink || alert.url);
     const publisher = alert.publisher || '国家预警信息发布中心';
-    const guide = GUIDE[alert.typeKey] || GUIDE.other;
+    const guide = GUIDE[alert.typeKey] || (alert.typeKey === 'monsoon' ? GUIDE.wind : GUIDE.other);
     const level = LEVELS[alert.levelKey] || LEVELS.blue;
     sheetBodyEl.innerHTML = `<div class="ws-head">
       <span class="ws-icon" style="--wl-tone:${alert.tone}">${iconSvg(alert.icon)}</span>
@@ -848,7 +992,7 @@
     <div class="ws-levels"><span class="ws-lamp-lg" style="--accent:${level.color}" aria-hidden="true"></span><div class="ws-level-text"><b>${esc(level.label)}预警</b><span>${esc(level.grade)}</span></div></div>
     ${text ? `<p class="ws-text">${esc(text)}</p>` : '<p class="ws-sync">官方正文同步中，以下为通用防御指引；可点击下方官方原文查看。</p>'}
     <div class="ws-guide"><h3>防御指引</h3><ul>${guide.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div>
-    <div class="ws-meta"><span>${esc(alert.typeName)}</span><span>${esc(alert.levelLabel)}</span><span>${esc(alert.place)}</span><span>${text ? '官方全文已同步' : '通用指引'}</span></div>
+    <div class="ws-meta"><span>${esc(alert.typeName)}</span><span>${esc(alert.levelLabel)}</span><span>${esc(alert.place)}</span><span>${text ? (alert.source === 'zhuhai' ? '官方预警含义' : '官方全文已同步') : '通用指引'}</span></div>
     <div class="ws-actions"><a class="ws-btn primary" href="${esc(official)}" target="_blank" rel="noopener">查看官方原文</a>${returnTo ? '<button class="ws-btn" type="button" data-warning-back>返回列表</button>' : ''}<button class="ws-btn" type="button" data-warning-close>关闭</button></div>`;
     showSheet();
   }

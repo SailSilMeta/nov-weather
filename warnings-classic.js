@@ -26,6 +26,20 @@
   });
   const HKMO_GEO = (window.HKMO_GEO && Array.isArray(window.HKMO_GEO.features)) ? window.HKMO_GEO.features : [];
   const GD_COUNTIES = (window.GD_COUNTIES && Array.isArray(window.GD_COUNTIES.features)) ? window.GD_COUNTIES.features : [];
+  // 对照珠海气象局万山区底图逐岛归属，保留原轮廓；排除九洲、横琴及大桥人工岛（weather.zhuhai.gov.cn/js/app.b86478f5.js）。
+  const WANSHAN_POLYGONS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 45, 46, 48, 49, 50, 51, 53, 54, 55, 56, 58, 59, 60, 63]);
+  const GD_WARNING_AREAS = GD_COUNTIES.flatMap((feature) => {
+    if (feature.properties.adcode !== '440402') return [feature];
+    const polygons = feature.geometry.coordinates;
+    return [
+      { ...feature, geometry: { ...feature.geometry, coordinates: polygons.filter((_, i) => !WANSHAN_POLYGONS.has(i)) } },
+      {
+        type: 'Feature',
+        properties: { name: '万山区', city: '珠海市', cityAdcode: '440400', provinceAdcode: '440000', parentCounty: '香洲区' },
+        geometry: { type: 'MultiPolygon', coordinates: polygons.filter((_, i) => WANSHAN_POLYGONS.has(i)) },
+      },
+    ];
+  });
   const GD_ROTATION = 0;
   const GD_ROTATION_CENTER = [113.48, 22.85];
 
@@ -51,7 +65,7 @@
 
   function rotatedGd() {
     if (gdRotated) return gdRotated;
-    const counties = rotateFeatures(GD_COUNTIES);
+    const counties = rotateFeatures(GD_WARNING_AREAS);
     const hkmo = rotateFeatures(HKMO_GEO);
     let minX = Infinity;
     let minY = Infinity;
@@ -123,6 +137,7 @@
     rain: '暴雨',
     cold: '寒冷',
     wind: '雷雨大风',
+    monsoon: '强季风',
     heat: '高温',
     drought: '干旱',
     fire: '森林火险',
@@ -452,9 +467,9 @@
       byName.set(key, list);
     };
     if (countyMode) {
-      const countyByName = new Map(GD_COUNTIES.map((feature) => [feature.properties.name, feature]));
+      const countyByName = new Map(GD_WARNING_AREAS.map((feature) => [feature.properties.name, feature]));
       const countiesByCity = new Map();
-      GD_COUNTIES.forEach((feature) => {
+      GD_WARNING_AREAS.forEach((feature) => {
         const city = feature.properties.city;
         const list = countiesByCity.get(city) || [];
         list.push(feature);
@@ -467,19 +482,24 @@
         const hit = countyByName.get(last);
         if (hit) {
           push(hit.properties.name, alert);
+          if (alert.source !== 'zhuhai') {
+            GD_WARNING_AREAS.filter((feature) => feature.properties.parentCounty === last)
+              .forEach((feature) => push(feature.properties.name, alert));
+          }
           continue;
         }
+        if (alert.scopeOnly) continue;
         const cityName = parts[0];
         const list = countiesByCity.get(cityName);
         if (list) {
           list.forEach((feature) => push(feature.properties.name, alert));
           continue;
         }
-        if (/广东省/.test(place)) GD_COUNTIES.forEach((feature) => push(feature.properties.name, alert));
+        if (/广东省/.test(place)) GD_WARNING_AREAS.forEach((feature) => push(feature.properties.name, alert));
       }
       return { byName, countyMode: true };
     }
-    for (const alert of alerts) push(cityKey(alert, map.cities), alert);
+    for (const alert of alerts) if (!alert.scopeOnly) push(cityKey(alert, map.cities), alert);
     return { byName, countyMode: false };
   }
 
@@ -491,6 +511,22 @@
     const showAllLabels = Boolean(provinceInfo());
     const anyLevel = [...byName.values()].some((rows) => rows.length);
     const points = hkmoMapPoints(mobile).map((point) => ({ ...point, hkmo: true }));
+    const macauVisible = points.some((point) => point.name === '澳门');
+    const scoped = base.filter((alert) => alert.scopeOnly && !((macauVisible || !map.info) && /·\s*万山区$/.test(alert.place)));
+    const zhuhai = map.cities.find((feature) => String(feature.properties.adcode) === '440400');
+    if (scoped.length && zhuhai) {
+      const wanshanOnly = scoped.length === 1 && /·\s*万山区$/.test(scoped[0].place);
+      const iconHeight = (mobile ? 22 : 30) * 131 / 160;
+      const labelOffset = (mobile ? 14 : 30) * 131 / 320 + 6 + (mobile ? 9.5 : 11);
+      points.push({
+        name: scoped.length === 1 ? scoped[0].place.replace('珠海市', '珠海') : '珠海分区预警',
+        cityKey: '珠海', value: rotatePoint(zhuhai.properties.center), count: scoped.length,
+        signalName: scoped.map((alert) => `${alert.place} · ${alert.typeName}${alert.levelLabel}预警`).join('；'),
+        symbol: `image://${window.WX_SIGNAL_ICONS['强季风-黄色']}`, label: true, scopeOnly: true,
+        labelAbove: wanshanOnly, mappedScope: countyMode && wanshanOnly,
+        offsetY: wanshanOnly ? iconHeight / 2 + labelOffset : 0,
+      });
+    }
     const pointMap = new Map(points.map((point) => [point.name, point]));
     const data = map.features.map((feature) => {
       const props = feature.properties;
@@ -503,7 +539,8 @@
       const selected = state.city === cityLabel || state.city === props.short;
       const point = special ? pointMap.get(props.short) : null;
       const shenzhen = countyMode && String(props.city || '') === '深圳市';
-      const showLabel = special
+      const scopeLabel = props.name === '万山区' && (macauVisible || points.some((point) => point.mappedScope));
+      const showLabel = special || scopeLabel
         ? false
         : countyMode
           ? Boolean(top) && !shenzhen
@@ -571,6 +608,10 @@
         z: 12,
         cursor: 'pointer',
         symbolSize: (value, params) => {
+          if (params.data.scopeOnly) {
+            const size = mobile ? (params.data.labelAbove ? 22 : 14) : 30;
+            return [size, size * 131 / 160];
+          }
           if (params.data.symbol !== 'circle') return mobile ? 14 : 30;
           return params.data.count ? (mobile ? 10 : 14) : 6;
         },
@@ -584,7 +625,7 @@
             : undefined,
           label: {
             show: Boolean(point.label),
-            position: 'bottom',
+            position: point.labelAbove ? 'top' : 'bottom',
             distance: 3,
             formatter: point.name,
             color: '#ffffff',
@@ -620,6 +661,7 @@
           if (!item) return esc(params.name);
           if (params.seriesType === 'scatter') {
             if (!item.count) return `<b>${esc(item.name)}</b><br>暂无生效信号`;
+            if (item.scopeOnly) return `<b>${esc(item.name)}分区预警</b><br>${esc(item.signalName)}<br>${item.mappedScope ? '已按万山区岛屿范围着色' : '图标定位市中心，不代表全市生效'}`;
             return `<b>${esc(item.name)}</b><br>${esc(item.signalName)}${item.count > 1 ? ` 等 ${item.count} 条信号` : ''}`;
           }
           if (item.special) {
@@ -1094,7 +1136,8 @@
       .sort((a, b) => (b.ts - a.ts) || (b.levelRank - a.levelRank));
     $('#warningClassicCount').textContent = `${rows.length} 条`;
     $('#warningClassicUpdated').textContent = snap.updatedAt ? `更新 ${fmtDateTime(snap.updatedAt)}` : '连接中…';
-    $('#warningClassicSource').textContent = `${snap.source || '中央气象台'} · 按城市最高等级着色 · 港澳信号不计入统计${snap.hkmo && snap.hkmo.mock ? ' · 港澳为模拟数据' : ''}`;
+    const unavailable = (snap.hkmo?.regions || []).filter((region) => region.error).map((region) => `${region.name}信号暂不可用`);
+    $('#warningClassicSource').textContent = `${[snap.source || '中央气象台', snap.zhuhaiNote, ...unavailable].filter(Boolean).join(' / ')} · 按城市最高等级着色 · 港澳信号不计入统计${snap.hkmo && snap.hkmo.mock ? ' · 港澳为模拟数据' : ''}`;
     const refresh = $('#warningClassicRefresh');
     refresh.disabled = Boolean(snap.loading);
     refresh.textContent = snap.loading ? '刷新中…' : '刷新';
@@ -1151,7 +1194,10 @@
 
   $('#warningClassicBack').addEventListener('click', () => { location.hash = '#/center'; });
   $('#warningClassicRefresh').addEventListener('click', () => {
-    if (window.WarningPage) window.WarningPage.ensureData(true);
+    if (window.WarningPage) {
+      window.WarningPage.ensureData(true);
+      window.WarningPage.loadHkMo(true);
+    }
     render();
   });
   function setProvince(value) {
