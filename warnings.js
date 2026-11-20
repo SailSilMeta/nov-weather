@@ -4,7 +4,7 @@
   const PROVINCES = ['广东省', '广西壮族自治区', '湖南省', '江西省', '福建省'];
   const PROVINCE_SHORT = { 广东省: '广东', 广西壮族自治区: '广西', 湖南省: '湖南', 江西省: '江西', 福建省: '福建' };
   const NMC_ALARM = 'https://www.nmc.cn/rest/findAlarm';
-  const GD_FIRE_API = 'api/gd-fire';
+  const GD_FIRE_API = qxApi('/api/gd-fire');
   const GD_FIRE_SNAPSHOT = 'data/gd-fire.json';
   const GD_LEVELS = { 红色: 'red', 橙色: 'orange', 黄色: 'yellow', 蓝色: 'blue', 白色: 'white' };
   const SNAPSHOT_MAX_AGE = 30 * 60e3;
@@ -698,7 +698,7 @@
       .map((alert) => ({ ...alert, validUntil: state.gdFireValidUntil }));
   }
 
-  const HKMO_API = 'api/warning-hkmo';
+  const HKMO_API = qxApi('/api/warning-hkmo');
   const HKMO_MOCK = new URLSearchParams(location.search).get('hkmoMock') === '1';
   const HK_WARNING_URL = 'https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=sc';
   const MO_WARNING_URL = 'https://www.smg.gov.mo/smg/zawarning/index.php';

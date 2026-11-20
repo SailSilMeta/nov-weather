@@ -1,0 +1,102 @@
+name: Refresh radar and news snapshots
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/radar.yml'
+      - 'scripts/fetch-radar.js'
+      - 'scripts/gz-radar.js'
+      - 'scripts/jm-radar.js'
+      - 'scripts/mo-radar.js'
+      - 'scripts/gd-news.js'
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: radar-refresh-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch radar and news snapshots
+        run: node scripts/fetch-radar.js
+      - name: Commit and push snapshot changes
+        id: publish
+        shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: |
+          paths=()
+          for path in data/radar-gz.json data/radar-jm.json data/radar-mo.json data/radar-news.json data/radar; do
+            if [ -e "$path" ]; then
+              paths+=("$path")
+            fi
+          done
+          if [ "${#paths[@]}" -eq 0 ]; then
+            echo "No snapshot files to stage"
+            exit 0
+          fi
+          git add -- "${paths[@]}"
+          if git diff --cached --quiet -- "${paths[@]}"; then
+            echo "No radar/news changes"
+            exit 0
+          fi
+          bot_git=(git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com')
+          "${bot_git[@]}" commit -m "$(cat <<'EOF'
+          chore: refresh radar and news snapshots
+          EOF
+          )"
+          # Other snapshot bots may have advanced the branch. Never force-push.
+          for attempt in 1 2 3; do
+            if git fetch origin "$TARGET_BRANCH"; then
+              if ! "${bot_git[@]}" rebase FETCH_HEAD; then
+                git rebase --abort
+                echo "::error::Snapshot rebase conflicted; stopped without pushing."
+                exit 1
+              fi
+              if git push origin "HEAD:refs/heads/$TARGET_BRANCH"; then
+                echo "pushed=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            echo "::warning::Snapshot fetch/push attempt $attempt of 3 failed."
+          done
+          echo "::error::Could not push snapshots after 3 attempts."
+          exit 1
+      - name: Request GitHub Pages branch build
+        if: steps.publish.outputs.pushed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # GITHUB_TOKEN pushes do not reliably trigger the default Pages build.
+          if result=$(gh api --method POST "repos/$GITHUB_REPOSITORY/pages/builds" 2>&1); then
+            printf '%s\n' "$result"
+            echo "Pages branch build requested; deployment is not yet verified."
+          else
+            printf '%s\n' "$result"
+            case "$result" in
+              *"HTTP 404"*)
+                echo "::warning::Snapshots pushed, but Pages returned 404. Pages may not be enabled for branch publishing. No Pages settings were changed and no deployment is confirmed."
+                ;;
+              *)
+                echo "::warning::Snapshots pushed, but the Pages build request failed. Check branch-based Pages is enabled and the token has pages:write permission. No Pages settings were changed and no deployment is confirmed."
+                ;;
+            esac
+          fi

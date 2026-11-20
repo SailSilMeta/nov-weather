@@ -1871,36 +1871,77 @@
   }
 
   /* ---------------- radar feature page ---------------- */
-  const RADAR_TOKEN_KEY = 'qxksh.radarToken';
-  const radarGuard = { unlocked: false, busy: false, seq: 0 };
+  const RADAR_ACCESS_KEY = 'qxksh.radarLocalAccess.v1';
+  const RADAR_ACCESS_TTL = 2 * 3600e3;
+  const RADAR_SUFFIX_HASH = '6e27c82b17d249bc0b571804f170ec5478d788c1bbb5916cac22c71ad20eb56c';
+  const radarGuard = { unlocked: false };
   const radarGateEl = $('#radarGate');
   const radarGateForm = $('#radarGateForm');
   const radarPassEl = $('#radarPass');
-  const radarGateSubmit = $('#radarGateSubmit');
   const radarGateMsg = $('#radarGateMsg');
   const radarContentEl = $('#radarContent');
 
-  function readRadarToken() {
+  // 局域网 HTTP 无 Web Crypto；单块 SHA-256 仅隐藏三字符后缀，不提供安全鉴权。
+  function radarSuffixDigest(value) {
+    const words = new Uint32Array(64);
+    for (let i = 0; i < value.length; i++) words[i >>> 2] |= value.charCodeAt(i) << (24 - (i % 4) * 8);
+    words[value.length >>> 2] |= 0x80 << (24 - (value.length % 4) * 8);
+    words[15] = value.length * 8;
+    const rotate = (n, bits) => (n >>> bits) | (n << (32 - bits));
+    for (let i = 16; i < 64; i++) {
+      const x = words[i - 15], y = words[i - 2];
+      const s0 = rotate(x, 7) ^ rotate(x, 18) ^ (x >>> 3);
+      const s1 = rotate(y, 17) ^ rotate(y, 19) ^ (y >>> 10);
+      words[i] = words[i - 16] + s0 + words[i - 7] + s1;
+    }
+    const constants = [
+      0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+      0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+      0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+      0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+      0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    const initial = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    let [a, b, c, d, e, f, g, h] = initial;
+    for (let i = 0; i < 64; i++) {
+      const s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
+      const choice = (e & f) ^ (~e & g);
+      const t1 = (h + s1 + choice + constants[i] + words[i]) >>> 0;
+      const s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
+      const majority = (a & b) ^ (a & c) ^ (b & c);
+      [a, b, c, d, e, f, g, h] = [(t1 + s0 + majority) >>> 0, a, b, c, (d + t1) >>> 0, e, f, g];
+    }
+    return [a, b, c, d, e, f, g, h].map((n, i) => ((n + initial[i]) >>> 0).toString(16).padStart(8, '0')).join('');
+  }
+
+  function matchesRadarPass(input, now = Date.now()) {
+    const value = input.replace(/\s+/g, '').toUpperCase();
+    if (!/^\d{4}[A-Z]{3}$/.test(value) || radarSuffixDigest(value.slice(4)) !== RADAR_SUFFIX_HASH) return false;
+    return [now, now - 60e3].some((time) => {
+      const date = new Date(time + 8 * 3600e3);
+      const clock = String(date.getUTCHours()).padStart(2, '0') + String(date.getUTCMinutes()).padStart(2, '0');
+      return value.slice(0, 4) === clock;
+    });
+  }
+
+  function readRadarAccess() {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(RADAR_TOKEN_KEY) || 'null');
-      if (saved && typeof saved.token === 'string' && Number(saved.exp) > Date.now()) return saved;
+      const exp = Number(sessionStorage.getItem(RADAR_ACCESS_KEY));
+      const now = Date.now();
+      if (Number.isFinite(exp) && exp > now && exp <= now + RADAR_ACCESS_TTL) return true;
+      sessionStorage.removeItem(RADAR_ACCESS_KEY);
     } catch (e) {
       /* ignore */
     }
-    return null;
+    return false;
   }
 
-  function saveRadarToken(token, exp) {
+  function saveRadarAccess() {
     try {
-      sessionStorage.setItem(RADAR_TOKEN_KEY, JSON.stringify({ token, exp }));
-    } catch (e) {
-      /* ignore */
-    }
-  }
-
-  function dropRadarToken() {
-    try {
-      sessionStorage.removeItem(RADAR_TOKEN_KEY);
+      sessionStorage.setItem(RADAR_ACCESS_KEY, String(Date.now() + RADAR_ACCESS_TTL));
     } catch (e) {
       /* ignore */
     }
@@ -1917,7 +1958,6 @@
     closeRadarViewer();
     radarContentEl.hidden = true;
     radarGateEl.hidden = false;
-    radarGateSubmit.disabled = radarGuard.busy;
     radarGateMessage(message, '');
   }
 
@@ -1925,7 +1965,6 @@
     radarGuard.unlocked = true;
     radarGateEl.hidden = true;
     radarContentEl.hidden = false;
-    radarGateSubmit.disabled = false;
     radarGateMessage('', '');
     radarPassEl.value = '';
     radarPageEl.scrollTop = 0;
@@ -1933,80 +1972,35 @@
     startRadarNews();
   }
 
-  async function verifyRadarSession(token) {
-    const res = await fetch('/api/radar/auth/verify', {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    return data && data.ok ? data : null;
-  }
-
-  async function openRadarPage() {
+  function openRadarPage() {
     radarPageEl.setAttribute('aria-hidden', 'false');
     radarPageEl.scrollTop = 0;
-    const seq = ++radarGuard.seq;
-    const saved = readRadarToken();
-    if (!saved) return lockRadarPage('');
-    lockRadarPage('正在验证访问权限…');
-    let granted = null;
-    try {
-      granted = await verifyRadarSession(saved.token);
-    } catch (e) {
-      granted = null;
-    }
-    if (seq !== radarGuard.seq) return;
-    if (granted) return unlockRadarPage();
-    dropRadarToken();
-    lockRadarPage('访问凭证已失效，请重新输入密码');
+    if (window.QXKSH_RADAR_GATE === false || readRadarAccess()) return unlockRadarPage();
+    lockRadarPage('');
   }
 
   function closeRadarPage() {
-    radarGuard.seq += 1;
     stopRadarBoard();
     closeRadarViewer();
     radarPageEl.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('radar-open');
   }
 
-  radarGateForm.addEventListener('submit', async (event) => {
+  radarGateForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    if (radarGuard.busy) return;
     const pass = radarPassEl.value.trim();
     if (!pass) {
       radarGateMessage('请输入密码', '');
       radarPassEl.focus();
       return;
     }
-    radarGuard.busy = true;
-    radarGateSubmit.disabled = true;
-    radarGateMessage('正在验证…', '');
-    try {
-      const res = await fetch('/api/radar/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pass }),
-      });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data && data.ok && data.token) {
-        saveRadarToken(data.token, data.exp);
-        radarGuard.busy = false;
-        unlockRadarPage();
-        return;
-      }
-      if (res.status === 401) {
-        radarPassEl.select();
-        radarGateMessage('密码错误，请重新输入', '');
-      } else {
-        radarGateMessage('验证服务不可用，请稍后再试', '');
-      }
-    } catch (e) {
-      radarGateMessage('无法连接验证服务，请通过本地服务访问', '');
+    if (!matchesRadarPass(pass)) {
+      radarPassEl.select();
+      radarGateMessage('密码错误，请重新输入', '');
+      return;
     }
-    radarGuard.busy = false;
-    radarGateSubmit.disabled = false;
+    saveRadarAccess();
+    unlockRadarPage();
   });
 
   $('#radarBack').addEventListener('click', () => { location.hash = '#/center'; });
@@ -2031,12 +2025,12 @@
     { key: 'moLight', name: '闪电定位' },
   ];
   const RADAR_SOURCES = [
-    { url: '/api/dg-radar', products: DG_RADAR_PRODUCTS },
-    { url: '/api/zh-radar', products: ZH_RADAR_PRODUCTS },
-    { url: '/api/fs-radar', products: FS_RADAR_PRODUCTS },
-    { url: '/api/jm-radar', products: JM_RADAR_PRODUCTS },
-    { url: '/api/gz-radar', products: GZ_RADAR_PRODUCTS },
-    { url: '/api/mo-radar', products: MO_RADAR_PRODUCTS },
+    { key: 'dg', products: DG_RADAR_PRODUCTS },
+    { key: 'zh', products: ZH_RADAR_PRODUCTS },
+    { key: 'fs', products: FS_RADAR_PRODUCTS },
+    { key: 'jm', products: JM_RADAR_PRODUCTS },
+    { key: 'gz', products: GZ_RADAR_PRODUCTS },
+    { key: 'mo', products: MO_RADAR_PRODUCTS },
   ];
   const RADAR_BOARD_PRODUCTS = RADAR_SOURCES.flatMap((source) => source.products);
   const RADAR_FRAME_MS = 1000;
@@ -2058,9 +2052,10 @@
   const radarViewerPrev = $('#radarViewerPrev');
   const radarViewerNext = $('#radarViewerNext');
   let radarViewerState = null;
-  const radarNews = { page: 0, totalPages: 0, loading: false, started: false };
+  const radarNews = { page: 0, totalPages: 0, loading: false, started: false, validUntil: 0 };
   const radarBoard = { loading: false, cards: new Map() };
   let radarRefreshTimer = null;
+  let radarSnapshotTimer = null;
 
   const RADAR_PLAY_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 2.2 9.4 6l-5.8 3.8z" fill="currentColor"/></svg>';
   const RADAR_PAUSE_ICON = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="3" y="2.2" width="2.2" height="7.6" rx=".8" fill="currentColor"/><rect x="6.8" y="2.2" width="2.2" height="7.6" rx=".8" fill="currentColor"/></svg>';
@@ -2104,9 +2099,13 @@
         seq: 0,
         preload: null,
         staleNote: '',
+        validUntil: 0,
       };
       state.img.addEventListener('error', () => {
         if (!state.playing) setRadarCardNote(state, '图片加载失败');
+      });
+      state.img.addEventListener('load', () => {
+        if (!state.img.hidden && !state.playing && !state.preload) setRadarCardNote(state, state.staleNote);
       });
       radarBoard.cards.set(card.dataset.key, state);
     });
@@ -2195,6 +2194,8 @@
 
   function stopRadarBoard() {
     radarBoard.cards.forEach(stopRadarCardPlay);
+    clearTimeout(radarSnapshotTimer);
+    radarSnapshotTimer = null;
     if (radarRefreshTimer) {
       clearInterval(radarRefreshTimer);
       radarRefreshTimer = null;
@@ -2301,6 +2302,7 @@
     state.seq += 1;
     stopRadarCardPlay(state);
     state.staleNote = '';
+    state.validUntil = product.validUntil || 0;
     state.ready = false;
     state.preload = null;
     state.frames = !product.maintenance && !product.error && Array.isArray(product.frames) ? product.frames : [];
@@ -2310,9 +2312,10 @@
     refreshRadarViewer(state);
     if (product.error) {
       state.img.hidden = true;
+      state.img.removeAttribute('src');
       state.time.textContent = '—';
       state.play.disabled = true;
-      setRadarCardNote(state, '雷达数据加载失败');
+      setRadarCardNote(state, product.errorNote || '雷达数据加载失败');
       return;
     }
     if (product.maintenance) {
@@ -2325,6 +2328,7 @@
     const latest = state.frames[state.frames.length - 1];
     if (!latest) {
       state.img.hidden = true;
+      state.time.textContent = '—';
       state.play.disabled = true;
       setRadarCardNote(state, '暂无雷达数据');
       return;
@@ -2335,7 +2339,11 @@
     state.time.textContent = latest.clock || '—';
     state.time.title = latest.stamp || '';
     state.play.disabled = false;
-    state.staleNote = product.stale ? '数据源未更新' : '';
+    state.staleNote = [
+      product.snapshotAt ? `${product.fallback ? '直连失败 · ' : ''}快照 ${LocalRadarData.stamp(product.snapshotAt).stamp}` : '',
+      product.stale ? '数据源未更新' : '',
+      product.partial ? '部分帧暂不可用' : '',
+    ].filter(Boolean).join(' · ');
     setRadarCardNote(state, state.staleNote);
   }
 
@@ -2394,52 +2402,60 @@
     }
   }
 
-  async function fetchRadarProducts(url) {
-    const res = await fetch(url, { cache: 'no-store' });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data || !Array.isArray(data.products)) throw new Error('radar');
-    return data.products;
+  function expireRadarSnapshots() {
+    clearTimeout(radarSnapshotTimer);
+    const now = Date.now();
+    const deadlines = [];
+    radarBoard.cards.forEach((state, key) => {
+      if (!state.validUntil) return;
+      if (state.validUntil <= now) applyRadarProduct({ key, error: true, errorNote: '快照已过期，等待自动更新', frames: [] });
+      else deadlines.push(state.validUntil);
+    });
+    if (radarNews.validUntil && radarNews.validUntil <= now) {
+      radarNews.validUntil = 0;
+      radarNews.started = false;
+      radarNewsListEl.innerHTML = radarNewsStateHtml('资讯快照已过期', true);
+      radarPagerEl.innerHTML = '';
+      $('#radarNewsSource').textContent = '广东省气象局';
+    } else if (radarNews.validUntil) deadlines.push(radarNews.validUntil);
+    radarSnapshotTimer = radarGuard.unlocked && document.body.classList.contains('radar-open') && deadlines.length
+      ? setTimeout(expireRadarSnapshots, Math.min(...deadlines) - now) : null;
   }
 
-  async function loadRadarBoard(force) {
+  async function loadRadarBoard() {
     if (radarBoard.loading) return;
     radarBoard.loading = true;
     radarRefreshEl.classList.add('is-spinning');
-    const suffix = force ? '?fresh=1' : '';
     try {
-      const results = await Promise.allSettled(RADAR_SOURCES.map((source) => fetchRadarProducts(`${source.url}${suffix}`)));
-      if (results.every((result) => result.status === 'rejected')) throw new Error('radar');
-      const products = [];
-      results.forEach((result, i) => {
-        if (result.status === 'fulfilled') products.push(...result.value);
-        else RADAR_SOURCES[i].products.forEach((p) => products.push({ ...p, error: true, frames: [] }));
-      });
-      products.forEach(applyRadarProduct);
-      const stamps = products.map((p) => p.latest).filter(Boolean).sort();
-      const latest = stamps[stamps.length - 1] || '';
-      radarMetaEl.textContent = latest ? `广东多站雷达 · 更新 ${latest.slice(6)}` : '广东多站雷达 · 逐帧回放';
-    } catch (e) {
-      radarBoard.cards.forEach((state) => {
-        if (state.frames.length || state.playing) return;
-        state.img.hidden = true;
-        setRadarCardNote(state, '雷达数据加载失败');
-      });
-      radarMetaEl.textContent = '雷达数据加载失败';
+      const groups = await Promise.all(RADAR_SOURCES.map(async (source) => {
+        const products = await LocalRadarData.load(source);
+        products.forEach(applyRadarProduct);
+        return products;
+      }));
+      const errors = groups.flat().filter((product) => product.error).length;
+      radarMetaEl.textContent = errors === RADAR_BOARD_PRODUCTS.length ? '雷达数据暂不可用'
+        : `官方直连＋定时快照${errors ? ` · ${errors} 项暂不可用` : ''}`;
     } finally {
       radarBoard.loading = false;
       radarRefreshEl.classList.remove('is-spinning');
+      expireRadarSnapshots();
     }
   }
 
   function startRadarBoard() {
     renderRadarCards();
-    loadRadarBoard(false);
+    expireRadarSnapshots();
+    loadRadarBoard();
     if (radarRefreshTimer) return;
     radarRefreshTimer = setInterval(() => {
       const busy = [...radarBoard.cards.values()].some((state) => state.playing);
-      if (!document.hidden && !busy) loadRadarBoard(false);
+      if (!document.hidden && !busy) loadRadarBoard();
     }, 3 * 60e3);
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && document.body.classList.contains('radar-open')) expireRadarSnapshots();
+  });
 
   function radarNewsStateHtml(text, retry) {
     return `<div class="radar-news-state">${text}${retry ? '<button type="button" class="radar-news-retry">重试</button>' : ''}</div>`;
@@ -2461,19 +2477,23 @@
       radarNewsListEl.innerHTML = radarNewsStateHtml('正在获取资讯…', false);
     }
     try {
-      const res = await fetch(`/api/gd-news?page=${page}`, { cache: 'no-store' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data || !Array.isArray(data.items) || !data.items.length) throw new Error('news');
-      radarNews.page = data.page || page;
-      radarNews.totalPages = data.totalPages || 1;
-      radarNewsListEl.innerHTML = data.items.map(radarNewsRowHtml).join('');
+      const data = await LocalRadarData.loadNews(page);
+      radarNews.page = data.page;
+      radarNews.totalPages = data.totalPages;
+      radarNews.validUntil = data.validUntil;
+      radarNewsListEl.innerHTML = data.items.length ? data.items.map(radarNewsRowHtml).join('') : radarNewsStateHtml('暂无气象资讯', false);
       radarNewsListEl.scrollTop = 0;
+      $('#radarNewsSource').textContent = `快照 ${LocalRadarData.stamp(data.snapshotAt).stamp}`;
+      $('#radarNewsSource').title = '广东省气象局 · 抓取时间（北京时间），非实时资讯';
       renderRadarPager();
     } catch (e) {
-      radarNewsListEl.innerHTML = radarNewsStateHtml('资讯加载失败', true);
+      radarNews.validUntil = 0;
+      radarNewsListEl.innerHTML = radarNewsStateHtml(escHtml(e.message), true);
       radarPagerEl.innerHTML = '';
+      $('#radarNewsSource').textContent = '广东省气象局';
     } finally {
       radarNews.loading = false;
+      expireRadarSnapshots();
     }
   }
 
@@ -2591,7 +2611,8 @@
 
   radarRefreshEl.addEventListener('click', () => {
     radarBoard.cards.forEach(stopRadarCardPlay);
-    loadRadarBoard(true);
+    loadRadarBoard();
+    loadRadarNewsPage(radarNews.page || 1);
   });
 
   /* ---------------- earthquake page ---------------- */

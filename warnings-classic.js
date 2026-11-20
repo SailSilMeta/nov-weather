@@ -1436,7 +1436,7 @@
           unlockBtn.disabled = true;
           gateMsg('正在验证…', 'ok');
           try {
-            const res = await fetch('/api/radar/auth', {
+            const res = await fetch(qxApi('/api/radar/auth'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ pass }),

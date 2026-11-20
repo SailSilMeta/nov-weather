@@ -234,8 +234,8 @@
       <span class="radar-gate-lock" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none"><rect x="4.5" y="10" width="15" height="10" rx="2.6" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7.8a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="14.6" r="1.5" fill="currentColor"/></svg>
       </span>
-      <h2>访问受保护</h2>
-      <p>该页面需要访问密码，验证通过后本次会话内有效。</p>
+      <h2>访问密码</h2>
+      <p>本地校验通过后，本标签页内 2 小时有效。</p>
       <div class="radar-gate-field">
         <input id="radarPass" type="password" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="输入访问密码" aria-label="访问密码" />
         <button type="submit" id="radarGateSubmit">进入</button>
@@ -251,7 +251,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.8 12l6.7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <span class="radar-crumb"><span>资讯</span><i>›</i><b>气象资讯</b></span>
-        <a class="radar-source" href="https://www.gd121.cn/zx/qxzx/list.shtml" target="_blank" rel="noopener noreferrer">广东省气象局</a>
+        <a class="radar-source" id="radarNewsSource" href="https://www.gd121.cn/zx/qxzx/list.shtml" target="_blank" rel="noopener noreferrer">广东省气象局</a>
       </header>
       <div class="radar-news-list" id="radarNewsList"></div>
       <nav class="radar-pager" id="radarPager" aria-label="资讯分页"></nav>
@@ -821,6 +821,8 @@
 <script src="assets/hk-signals/manifest.js"></script>
 <script src="data/snapshot.js"></script>
 <script src="data/cold-air.js"></script>
+<script src="api-config.js"></script>
+<script src="radar-data.js"></script>
 <script src="warnings.js"></script>
 <script src="warnings-classic.js"></script>
 <script src="typhoons.js"></script>

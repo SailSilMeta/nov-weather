@@ -9,7 +9,9 @@
     "test:cold": "node scripts/test-cold-air.js",
     "geo": "node scripts/build-geo.js",
     "shot": "node scripts/shot.js",
-    "test:ui": "node scripts/test-ui.js"
+    "test:ui": "node scripts/test-ui.js",
+    "build:cloud": "node scripts/build-cloud.js",
+    "build:site": "node scripts/build-site.js"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +22,8 @@
   },
   "private": true,
   "devDependencies": {
+    "adm-zip": "^0.6.1",
+    "esbuild": "^0.28.2",
     "polygon-clipping": "^0.15.7"
   }
 }
