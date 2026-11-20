@@ -7,6 +7,7 @@
   const GD_FIRE_API = 'api/gd-fire';
   const GD_FIRE_SNAPSHOT = 'data/gd-fire.json';
   const GD_LEVELS = { 红色: 'red', 橙色: 'orange', 黄色: 'yellow', 蓝色: 'blue', 白色: 'white' };
+  const SNAPSHOT_MAX_AGE = 30 * 60e3;
   const PAGE_SIZE = 100;
   const MAX_PAGES = 8;
   const TYPE_DEFS = [
@@ -74,11 +75,17 @@
   const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const state = {
     alerts: [],
+    warningCandidates: [],
     groups: [],
     snapshotById: new Map(),
     snapshotByTitle: new Map(),
     snapshotByKey: new Map(),
     snapshotAt: 0,
+    snapshotValidUntil: 0,
+    snapshotNote: '',
+    gdFireValidUntil: 0,
+    gdFireNote: '',
+    expiryTimer: null,
     updatedAt: 0,
     source: '中央气象台',
     loading: false,
@@ -283,6 +290,8 @@
 
   function countText(group, list) {
     if (group.key === 'monsoon' && state.zhuhai?.error) return list.length ? `${list.length} 条 · 上次数据` : '数据暂不可用';
+    if (group.key === 'fire' && state.gdFireNote && ['all', '广东省'].includes(cardFilter(group.key))) return list.length ? `${list.length} 条 · 广东数据不完整` : '广东数据暂不可用';
+    if (group.key !== 'monsoon' && state.snapshotNote && !list.length) return '数据暂不可用';
     if (!group.alerts.length) return '待机';
     return `${list.length} 条 · 预 警`;
   }
@@ -459,6 +468,8 @@
     const list = cardAlerts(group);
     const shown = list.slice(0, shownSignCount());
     const filter = cardFilter(group.key);
+    const unavailable = group.key === 'monsoon' ? state.zhuhai?.error
+      : state.snapshotNote || (group.key === 'fire' && state.gdFireNote && ['all', '广东省'].includes(filter));
     const accent = levelAccent(list, group);
     const options = [['all', '全部省份'], ...PROVINCES.map((p) => [p, PROVINCE_SHORT[p]])]
       .map(([value, label]) => `<option value="${esc(value)}"${filter === value ? ' selected' : ''}>${esc(label)}</option>`)
@@ -478,7 +489,7 @@
         ${active && !list.length ? `<div class="wcard-empty"><span>${esc(filterName(group.key))}暂无此类预警</span></div>` : ''}
       </div>
       <div class="wcard-bar"><span class="wcard-count">${esc(countText(group, list))}</span><button class="wcard-detail" type="button" data-type-detail="${group.key}" aria-label="查看${esc(group.name)}的全部预警地点">详情<b>${list.length}</b></button></div>
-      ${active ? '' : `<div class="wcard-idle"><span>${group.key === 'monsoon' && state.zhuhai?.error ? '强季风数据暂不可用' : '本轮暂无预警'}</span></div>`}
+      ${active ? '' : `<div class="wcard-idle"><span>${unavailable ? (group.key === 'monsoon' ? '强季风数据暂不可用' : '预警数据暂不可用') : '本轮暂无预警'}</span></div>`}
     </article>`;
   }
 
@@ -531,16 +542,37 @@
     document.dispatchEvent(new CustomEvent('warnings:update'));
   }
 
+  function expireSnapshots() {
+    const now = Date.now();
+    if (state.snapshotValidUntil && state.snapshotValidUntil <= now) {
+      state.snapshotValidUntil = 0;
+      state.snapshotNote = '内地预警快照已过期，数据暂不可用';
+    }
+    if (state.gdFireValidUntil && state.gdFireValidUntil <= now) {
+      state.gdFireValidUntil = 0;
+      state.gdFireNote = '广东森林火险快照已过期，数据暂不可用';
+    }
+    state.warningCandidates = state.warningCandidates.filter((alert) => !alert.validUntil || alert.validUntil > now);
+    // 较旧快照到期后，同区同类预警仍可采用其他新鲜来源。
+    state.alerts = dedupe(state.alerts.filter((alert) => !alert.validUntil || alert.validUntil > now).concat(state.warningCandidates));
+    state.groups = groupAlerts(state.alerts);
+    clearTimeout(state.expiryTimer);
+    const deadlines = [state.snapshotValidUntil, state.gdFireValidUntil].filter((time) => time > now);
+    state.expiryTimer = deadlines.length ? setTimeout(render, Math.min(...deadlines) - now) : null;
+  }
+
   function render() {
+    expireSnapshots();
     const total = state.alerts.length;
     const activeTypes = state.groups.filter((g) => g.alerts.length).length;
     $('#warningTotal').textContent = String(total);
     $('#warningTypes').textContent = String(activeTypes);
-    $('#warningSource').textContent = [state.source, state.zhuhaiNote].filter(Boolean).join(' / ');
+    $('#warningSource').textContent = [state.source, state.snapshotNote, state.gdFireNote, state.zhuhaiNote].filter(Boolean).join(' / ');
     $('#warningUpdated').textContent = state.updatedAt ? `更新 ${fmtClock(state.updatedAt)}` : '连接中…';
+    const unavailable = state.snapshotNote || state.gdFireNote || state.zhuhai?.error;
     const banner = total
       ? ''
-      : `<div class="warning-empty-all">${state.zhuhai?.error ? '珠海强季风数据暂不可用，其余已获取数据暂无生效预警。' : '当前五省暂无生效预警，所有扶梯处于待机状态。'}</div>`;
+      : `<div class="warning-empty-all">${unavailable ? '部分预警数据暂不可用，已获取数据暂无生效预警。' : '当前五省暂无生效预警，所有扶梯处于待机状态。'}</div>`;
     listEl.innerHTML = banner + state.groups.map(cardHtml).join('');
     listEl.querySelectorAll('.wcard').forEach(paintCard);
     notifyUpdate();
@@ -548,13 +580,6 @@
 
   function renderLoading() {
     listEl.innerHTML = '<div class="warning-loading">正在读取全国预警…</div>';
-    $('#warningTotal').textContent = '—';
-    $('#warningTypes').textContent = '—';
-    notifyUpdate();
-  }
-
-  function renderError() {
-    listEl.innerHTML = '<div class="warning-empty-all">预警数据暂时不可用，请稍后点击右上角刷新。</div>';
     $('#warningTotal').textContent = '—';
     $('#warningTypes').textContent = '—';
     notifyUpdate();
@@ -570,11 +595,19 @@
     return pageData;
   }
 
+  function freshSnapshotTime(value) {
+    const time = Date.parse(value || '');
+    const now = Date.now();
+    return Number.isFinite(time) && time <= now + 60e3 && now - time < SNAPSHOT_MAX_AGE ? Math.min(time, now) : 0;
+  }
+
   async function loadSnapshot() {
     try {
       const res = await fetch(`data/warnings.json?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('snapshot');
       const json = await res.json();
+      const fetchedAt = freshSnapshotTime(json.updatedAt);
+      if (!fetchedAt || !Array.isArray(json.alerts) || json.alerts.some((item) => !item || typeof item.title !== 'string' || !item.title.trim())) throw new Error('snapshot expired or invalid');
       const byId = new Map();
       const byTitle = new Map();
       const byKey = new Map();
@@ -589,9 +622,13 @@
       state.snapshotById = byId;
       state.snapshotByTitle = byTitle;
       state.snapshotByKey = byKey;
-      state.snapshotAt = Date.parse(json.updatedAt || '') || Date.now();
+      state.snapshotAt = fetchedAt;
       return json;
     } catch (e) {
+      state.snapshotById.clear();
+      state.snapshotByTitle.clear();
+      state.snapshotByKey.clear();
+      state.snapshotAt = 0;
       return null;
     }
   }
@@ -608,22 +645,21 @@
     } catch (e) {
       /* Static deployment or proxy unavailable: use the snapshot below. */
     }
-    if (!payload || !Array.isArray(payload.alerts)) {
+    if (!payload || !Array.isArray(payload.alerts) || !freshSnapshotTime(payload.fetchedAt)) {
+      payload = null;
       try {
         const res = await fetch(`${GD_FIRE_SNAPSHOT}?t=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
-          const snapshot = await res.json();
-          if (snapshot && Array.isArray(snapshot.alerts)) {
-            payload = snapshot;
-            mode = 'snapshot';
-          }
+          payload = await res.json();
+          mode = 'snapshot';
         }
       } catch (e) {
         return null;
       }
     }
-    if (!payload || !Array.isArray(payload.alerts)) return null;
-    return { alerts: payload.alerts, mode, fetchedAt: Date.parse(payload.fetchedAt) || Date.now() };
+    const fetchedAt = payload && freshSnapshotTime(payload.fetchedAt);
+    if (!fetchedAt || !Array.isArray(payload.alerts)) return null;
+    return { alerts: payload.alerts, mode, fetchedAt };
   }
 
   function normalizeGdFire(row, mode) {
@@ -655,8 +691,11 @@
   }
 
   function gdFireAlerts(gd) {
+    state.gdFireValidUntil = gd ? gd.fetchedAt + SNAPSHOT_MAX_AGE : 0;
+    state.gdFireNote = gd ? '' : '广东森林火险数据暂不可用（快照过期或读取失败）';
     if (!gd) return [];
-    return gd.alerts.map((row) => normalizeGdFire(row, gd.mode)).filter(Boolean);
+    return gd.alerts.map((row) => normalizeGdFire(row, gd.mode)).filter(Boolean)
+      .map((alert) => ({ ...alert, validUntil: state.gdFireValidUntil }));
   }
 
   const HKMO_API = 'api/warning-hkmo';
@@ -913,8 +952,11 @@
       const rest = await Promise.all(Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => fetchNmcPage(i + 2).catch(() => null)));
       if (seq !== state.seq) return;
       const raw = [first, ...rest.filter(Boolean)].flatMap((p) => p.list || []);
-      state.alerts = dedupe(raw.map((item) => normalizeAlert(item, 'live')).filter(Boolean).concat(state.testAlerts || []));
+      state.warningCandidates = raw.map((item) => normalizeAlert(item, 'live')).filter(Boolean);
+      state.alerts = dedupe(state.warningCandidates.concat(state.testAlerts || []));
       state.source = '中央气象台';
+      state.snapshotValidUntil = 0;
+      state.snapshotNote = '';
       state.updatedAt = Date.now();
       state.groups = groupAlerts(state.alerts);
       state.lastLoad = Date.now();
@@ -922,6 +964,7 @@
       const gd = await gdPromise;
       if (seq !== state.seq) return;
       const extra = gdFireAlerts(gd);
+      state.warningCandidates = state.warningCandidates.concat(extra);
       if (extra.length) {
         state.alerts = dedupe([...state.alerts, ...extra]);
         state.source = '中央气象台 / 广东省气象局';
@@ -935,23 +978,17 @@
       const [snapshot, gd] = await Promise.all([snapshotPromise, gdPromise]);
       if (seq !== state.seq) return;
       const extra = gdFireAlerts(gd);
-      if (snapshot && snapshot.alerts && snapshot.alerts.length) {
-        state.alerts = dedupe([...snapshot.alerts.map((item) => normalizeAlert(item, 'snapshot')).filter(Boolean), ...extra, ...(state.testAlerts || [])]);
-        state.source = extra.length ? '中国天气网快照 / 广东省气象局' : '中国天气网快照';
-        state.updatedAt = Math.max(state.snapshotAt || Date.now(), gd ? gd.fetchedAt || 0 : 0);
-        state.groups = groupAlerts(state.alerts);
-        state.lastLoad = Date.now();
-        render();
-      } else if (extra.length) {
-        state.alerts = dedupe(extra);
-        state.source = '广东省气象局';
-        state.updatedAt = gd.fetchedAt || Date.now();
-        state.groups = groupAlerts(state.alerts);
-        state.lastLoad = Date.now();
-        render();
-      } else if (!state.alerts.length) {
-        renderError();
-      }
+      state.snapshotValidUntil = snapshot ? state.snapshotAt + SNAPSHOT_MAX_AGE : 0;
+      state.snapshotNote = snapshot ? '' : '内地预警数据暂不可用（快照过期或读取失败）';
+      const fallback = snapshot ? snapshot.alerts.map((item) => normalizeAlert(item, 'snapshot')).filter(Boolean)
+        .map((alert) => ({ ...alert, validUntil: state.snapshotValidUntil })) : [];
+      state.warningCandidates = [...fallback, ...extra];
+      state.alerts = dedupe(state.warningCandidates.concat(state.testAlerts || []));
+      state.source = [snapshot ? '中国天气网快照' : '', gd ? '广东省气象局' : ''].filter(Boolean).join(' / ');
+      state.updatedAt = Math.max(snapshot ? state.snapshotAt : 0, gd ? gd.fetchedAt : 0);
+      state.groups = groupAlerts(state.alerts);
+      state.lastLoad = Date.now();
+      render();
     } finally {
       const zhuhai = await zhuhaiPromise;
       if (seq === state.seq) {
@@ -1117,6 +1154,9 @@
   }
 
   function bind() {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.lastLoad) render();
+    });
     let railDrag = null;
     const hoverCapable = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches;
     $('#warningBack').addEventListener('click', () => {

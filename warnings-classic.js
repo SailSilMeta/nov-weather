@@ -679,7 +679,11 @@
     ensureChart();
     if (!chart) return;
     const built = buildMapOption(alerts, map);
-    $('#warningClassicMapEmpty').hidden = built.data.some((item) => item.value > 0) || built.points.some((point) => point.count > 0);
+    const snap = warningState();
+    const incomplete = snap.snapshotNote || (snap.gdFireNote && ['all', '广东省'].includes(state.province));
+    const empty = $('#warningClassicMapEmpty');
+    empty.textContent = incomplete ? '部分预警数据暂不可用' : '当前筛选条件下暂无预警城市';
+    empty.hidden = built.data.some((item) => item.value > 0) || built.points.some((point) => point.count > 0);
     const mapEl = $('#warningClassicMap');
     if (mapEl) mapEl.classList.toggle('is-county', built.countyMode);
     chart.setOption(built.option, true);
@@ -1137,7 +1141,7 @@
     $('#warningClassicCount').textContent = `${rows.length} 条`;
     $('#warningClassicUpdated').textContent = snap.updatedAt ? `更新 ${fmtDateTime(snap.updatedAt)}` : '连接中…';
     const unavailable = (snap.hkmo?.regions || []).filter((region) => region.error).map((region) => `${region.name}信号暂不可用`);
-    $('#warningClassicSource').textContent = `${[snap.source || '中央气象台', snap.zhuhaiNote, ...unavailable].filter(Boolean).join(' / ')} · 按城市最高等级着色 · 港澳信号不计入统计${snap.hkmo && snap.hkmo.mock ? ' · 港澳为模拟数据' : ''}`;
+    $('#warningClassicSource').textContent = `${[snap.source, snap.snapshotNote, snap.gdFireNote, snap.zhuhaiNote, ...unavailable].filter(Boolean).join(' / ')} · 按城市最高等级着色 · 港澳信号不计入统计${snap.hkmo && snap.hkmo.mock ? ' · 港澳为模拟数据' : ''}`;
     const refresh = $('#warningClassicRefresh');
     refresh.disabled = Boolean(snap.loading);
     refresh.textContent = snap.loading ? '刷新中…' : '刷新';
@@ -1149,7 +1153,8 @@
     if (snap.loading && !alerts.length) {
       listEl.innerHTML = '<div class="wcv-loading">正在读取全国预警…</div>';
     } else if (!rows.length) {
-      listEl.innerHTML = '<div class="wcv-empty">当前筛选条件下暂无生效预警。<br>可调整省份、类型、时间或颜色，或点击右上角刷新。</div>';
+      const incomplete = snap.snapshotNote || (snap.gdFireNote && ['all', '广东省'].includes(state.province));
+      listEl.innerHTML = `<div class="wcv-empty">${incomplete ? '部分预警数据暂不可用，已获取数据在当前筛选下暂无生效预警。' : '当前筛选条件下暂无生效预警。'}<br>可调整省份、类型、时间或颜色，或点击右上角刷新。</div>`;
     } else {
       listEl.innerHTML = shown.map((alert) => rowHtml(alert, cityFeatures)).join('');
     }
