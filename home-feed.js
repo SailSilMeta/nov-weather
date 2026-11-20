@@ -29,6 +29,17 @@
   ];
   const WIND_NAMES = ['北风', '东北风', '东风', '东南风', '南风', '西南风', '西风', '西北风'];
   const BEAUFORT = [0.3, 1.6, 3.4, 5.5, 8.0, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7];
+  const WIND_BANDS = [
+    { max: 1, label: '1级', color: '#b7d8f0' },
+    { max: 2, label: '2级', color: '#78b9e7' },
+    { max: 3, label: '3级', color: '#3f8fd6' },
+    { max: 4, label: '4级', color: '#2864b8' },
+    { max: 5, label: '5级', color: '#514aac' },
+    { max: 12, label: '≥6级', color: '#783c9c' },
+  ];
+  const WIND_OTHER = '#d3dbe1';
+  const WIND_MISSING = '#f2f4f6';
+  const WIND_KEYS = [...WIND_BANDS, { label: '非北风', color: WIND_OTHER }, { label: '缺测', color: WIND_MISSING }];
 
   const GD_CITIES = ((window.MAP_DATA && window.MAP_DATA.cities && window.MAP_DATA.cities.features) || [])
     .filter((feature) => feature.properties.provinceAdcode === 440000);
@@ -84,7 +95,9 @@
   }
 
   function mapLayout() {
-    return layoutFor(el.clientWidth, el.clientHeight, isEmpty(), legendEl ? legendEl.offsetHeight : 0);
+    const layout = layoutFor(el.clientWidth, el.clientHeight, isEmpty(), legendEl ? legendEl.offsetHeight : 0);
+    if (mapView === 'wind' && mobileLegendQuery.matches) layout.center = ['50%', '50%'];
+    return layout;
   }
 
   const byShort = new Map();
@@ -115,10 +128,16 @@
 
   const chipEl = document.getElementById('coldChip');
   const metaEl = document.getElementById('coldMeta');
+  const viewTabsEl = document.getElementById('coldViewTabs');
+  const mapPanelEl = document.getElementById('coldMapPanel');
+  let mapView = 'process';
   const stripEl = document.getElementById('coldStrip');
   const stripTagEl = document.getElementById('coldStripTag');
   const stripViewEl = document.getElementById('coldStripView');
   const legendEl = document.getElementById('coldLegend');
+  const legendToggleEl = document.getElementById('coldLegendToggle');
+  const mobileLegendQuery = window.matchMedia('(max-width: 760px)');
+  let windLegendExpanded = false;
   const clockEl = document.getElementById('coldClock');
   const emptyEl = document.getElementById('coldEmpty');
   const downloadEl = document.getElementById('coldDownload');
@@ -145,7 +164,7 @@
   }
   function renderClock() {
     if (!clockEl) return;
-    const text = clockText();
+    const text = mapView === 'wind' ? `观测 ${windTime(windUpdatedAt())}` : clockText();
     if (clockEl.textContent !== text) clockEl.textContent = text;
   }
   function hoursBetween(a, b) {
@@ -166,9 +185,56 @@
 
   // 四站全未达标且过程未开启：地图进入空状态
   function isEmpty() {
+    if (mapView === 'wind') return false;
     const cur = current();
     if (cur.active) return false;
     return !GATE_DEFS.some((g) => cur.gate[g.ad] && cur.gate[g.ad].passed);
+  }
+
+  function windReading(ad) {
+    const series = (state && state.series && state.series[ad]) || [];
+    const last = series[series.length - 1];
+    const hourly = last || (state && state.cities && state.cities[ad]) || {};
+    const hourlyAt = (last && last.t) || '';
+    const live = state && state.live && state.live[ad];
+    const liveAt = live && live.pub ? live.pub.replace(' ', 'T').slice(0, 16) : '';
+    // 风向、风速必须来自同一时次，不能用旧风速补新观测的缺测。
+    const useLive = !!liveAt && liveAt >= hourlyAt;
+    const sample = useLive ? live : hourly;
+    const dir = Number.isFinite(sample.dir) && sample.dir >= 0 && sample.dir <= 360 ? sample.dir : null;
+    const spd = Number.isFinite(sample.spd) && sample.spd >= 0 && sample.spd !== 9999 ? sample.spd : null;
+    const level = spd == null ? null : windLevelOf(spd);
+    const valid = dir != null && level != null;
+    const north = valid && level > 0 && (dir <= 67.5 || dir >= 292.5);
+    const color = !valid ? WIND_MISSING : north ? WIND_BANDS.find((band) => level <= band.max).color : WIND_OTHER;
+    return { dir, spd, level, valid, north, color, at: useLive ? liveAt : hourlyAt };
+  }
+
+  function windUpdatedAt() {
+    return GD_CITIES.map((feature) => windReading(String(feature.properties.adcode)).at).sort().pop() || '';
+  }
+
+  function windTime(at) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(at || '');
+    return m ? `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5]}` : '暂无数据';
+  }
+
+  function windTooltipHTML(name) {
+    const city = byShort.get(name);
+    if (!city) return '';
+    const reading = windReading(city.adcode);
+    const direction = reading.dir == null ? '风向缺测' : WIND_NAMES[Math.round((reading.dir % 360) / 45) % 8];
+    const status = !reading.valid ? '观测缺测' : reading.level === 0 ? '静风' : reading.north ? '偏北风' : '非北风';
+    return `<div class="cold-tip">
+      <div class="cold-tip-head"><b>${city.name}</b><span class="cold-tip-tag">${status}</span></div>
+      <p>代表站观测 ${windTime(reading.at)}</p>
+      <ul>
+        <li>风向 <b>${direction}</b></li>
+        <li>风力 <b>${reading.level == null ? '缺测' : `${reading.level}级`}</b></li>
+        <li>风速 <b>${reading.spd == null ? '缺测' : `${reading.spd.toFixed(1)} m/s`}</b></li>
+      </ul>
+      <p>北风不等于冷空气已抵达</p>
+    </div>`;
   }
 
   function cityOf(name) {
@@ -337,8 +403,23 @@
 
   function buildMapOption(layout, empty, narrow) {
     const cur = current();
+    const wind = mapView === 'wind';
     const data = GD_CITIES.map((feature) => {
       const short = feature.properties.short;
+      if (wind) {
+        const reading = windReading(String(feature.properties.adcode));
+        const label = {
+          show: reading.north, formatter: short,
+          color: '#ffffff', textBorderColor: 'rgba(0, 0, 0, .45)',
+        };
+        return {
+          name: short,
+          value: reading.north ? reading.level : null,
+          itemStyle: { areaColor: reading.color, borderType: reading.valid ? 'solid' : 'dashed', borderColor: reading.valid ? 'rgba(255, 255, 255, .85)' : '#b9c5ce' },
+          label,
+          emphasis: { label, itemStyle: { areaColor: reading.color, borderColor: '#37505f', borderWidth: 1.5 } },
+        };
+      }
       const city = cur.cities[String(feature.properties.adcode)];
       const arrived = !!(city && city.status === 'arrived');
       return {
@@ -353,8 +434,9 @@
       const lit = !!(adjacent && adjacent.status === 'arrived');
       data.push({
         name: region.name,
-        value: lit ? 1 : 0,
-        itemStyle: { areaColor: empty ? 'rgba(63, 143, 214, .1)' : lit ? CITY_COLOR : PENDING_COLOR },
+        value: wind ? null : lit ? 1 : 0,
+        itemStyle: { areaColor: wind ? WIND_MISSING : empty ? 'rgba(63, 143, 214, .1)' : lit ? CITY_COLOR : PENDING_COLOR },
+        emphasis: { disabled: true },
         tooltip: { show: false },
       });
     }
@@ -369,7 +451,8 @@
         borderWidth: 0,
         padding: 0,
         extraCssText: 'box-shadow:0 8px 24px rgba(15,50,70,.18);border-radius:12px;',
-        formatter: (p) => (HK_MO_NAMES.has(p.name) ? '' : tooltipHTML(p.name)),
+        triggerOn: 'mousemove|click',
+        formatter: (p) => (HK_MO_NAMES.has(p.name) ? '' : wind ? windTooltipHTML(p.name) : tooltipHTML(p.name)),
       },
       series: [{
         type: 'map',
@@ -397,7 +480,7 @@
           textBorderWidth: 2,
         },
         labelLayout: { hideOverlap: true },
-        emphasis: { disabled: true },
+        emphasis: { disabled: !wind },
         data,
       }],
     };
@@ -405,7 +488,7 @@
 
   function gateGraphic(inst, narrow) {
     // 空状态下不显示任何关口标记
-    if (isEmpty()) return [];
+    if (mapView === 'wind' || isEmpty()) return [];
     const scale = narrow ? 0.68 : 1;
     const cur = current();
     const gateNow = cur.gate;
@@ -575,8 +658,46 @@
     ctx.fillText('冷空气南下进度条', u(x0 + contentW / 2), u(barTop + barH + 3 + 17 / 2));
   }
 
-  function drawExportClock(ctx, u, width) {
-    const text = clockText();
+  function drawWindExportLegend(ctx, u) {
+    const left = 12, top = 12, padX = 9, padY = 6, rowH = 17, gap = 3;
+    const height = padY * 2 + rowH * (WIND_KEYS.length + 1) + gap * WIND_KEYS.length;
+    const x = left + padX, y0 = top + padY;
+    ctx.save();
+    ctx.shadowColor = 'rgba(20, 60, 80, .1)';
+    ctx.shadowBlur = u(8);
+    ctx.shadowOffsetY = u(2);
+    ctx.fillStyle = 'rgba(255, 255, 255, .88)';
+    roundRect(ctx, u(left), u(top), u(104 + padX * 2), u(height), u(9));
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.font = `700 ${u(13)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#55707f';
+    ctx.fillText('北风风力（级）', u(x), u(y0 + rowH / 2));
+    WIND_KEYS.forEach((key, i) => {
+      const y = y0 + (i + 1) * (rowH + gap);
+      ctx.fillStyle = key.color;
+      roundRect(ctx, u(x), u(y + 4.5), u(8), u(8), u(3));
+      ctx.fill();
+      if (key.color === WIND_MISSING) {
+        ctx.save();
+        ctx.strokeStyle = '#a6b5bf';
+        ctx.setLineDash([u(2), u(2)]);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = '#55707f';
+      ctx.fillText(key.label, u(x + 12), u(y + rowH / 2));
+    });
+    ['广东城市代表站', '非北风含静风'].forEach((line, i) => {
+      ctx.fillText(line, u(x), u(top + height + 18 + i * 18));
+    });
+    ctx.restore();
+  }
+
+  function drawExportClock(ctx, u, width, text) {
     ctx.save();
     ctx.font = `800 ${u(14)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
     const boxW = ctx.measureText(text).width + u(18);
@@ -616,14 +737,29 @@
     exporting = true;
     if (downloadEl) downloadEl.disabled = true;
     const empty = isEmpty();
+    const wind = mapView === 'wind';
+    const stats = legendStats();
+    const clock = wind ? `观测 ${windTime(windUpdatedAt())}` : clockText();
     const container = document.createElement('div');
     container.style.cssText = `position:fixed;left:-10000px;top:0;width:${EXPORT_W}px;height:${EXPORT_H}px;`;
     document.body.appendChild(container);
     const inst = echarts.init(container);
     try {
-      inst.setOption(buildMapOption(layoutFor(EXPORT_W, EXPORT_H, empty, EXPORT_LEGEND_H), empty, false), true);
-      await chartFinished(inst);
+      const option = buildMapOption(layoutFor(EXPORT_W, EXPORT_H, empty, EXPORT_LEGEND_H), empty, false);
+      if (wind) {
+        for (const area of option.series[0].data) {
+          if (area.value > 1) {
+            Object.assign(area.label, {
+              formatter: `${area.name}\n{level|${area.value}}`,
+              lineHeight: 14,
+              rich: { level: { fontSize: 14, fontWeight: 800, lineHeight: 17 } },
+            });
+          }
+        }
+      }
+      inst.setOption(option, true);
       const gates = gateGraphic(inst, false);
+      await chartFinished(inst);
       if (gates.length) {
         inst.setOption({ graphic: gates });
         await chartFinished(inst, 400);
@@ -659,9 +795,10 @@
       }
       ctx.fillRect(0, 0, cardW, cardH);
       ctx.drawImage(img, 0, 0, cardW, cardH);
-      if (empty) drawExportEmpty(ctx, u, EXPORT_W, EXPORT_H);
-      else drawExportLegend(ctx, u, legendStats());
-      drawExportClock(ctx, u, EXPORT_W);
+      if (wind) drawWindExportLegend(ctx, u);
+      else if (empty) drawExportEmpty(ctx, u, EXPORT_W, EXPORT_H);
+      else drawExportLegend(ctx, u, stats);
+      drawExportClock(ctx, u, EXPORT_W, clock);
       ctx.restore();
       ctx.save();
       const line = Math.max(1, u(1));
@@ -675,7 +812,7 @@
       const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
       const link = document.createElement('a');
       link.href = canvas.toDataURL('image/png');
-      link.download = `冷空气南下实况-${stamp}.png`;
+      link.download = `${wind ? '广东北风风力' : '冷空气南下实况'}-${stamp}.png`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -743,6 +880,20 @@
     tipTimer = 0;
   }
 
+  function renderLegendDisclosure() {
+    const collapsible = mapView === 'wind' && mobileLegendQuery.matches;
+    const collapsed = collapsible && !windLegendExpanded;
+    if (legendToggleEl) {
+      legendToggleEl.hidden = !collapsible;
+      legendToggleEl.setAttribute('aria-expanded', String(collapsible && windLegendExpanded));
+      legendToggleEl.setAttribute('aria-label', `${windLegendExpanded ? '收起' : '展开'}北风风力图例`);
+    }
+    if (legendEl) {
+      legendEl.classList.toggle('is-collapsed', collapsed);
+      legendEl.setAttribute('aria-hidden', String(isEmpty() || collapsed));
+    }
+  }
+
   function renderStatus() {
     const cur = current();
     const isActive = cur.active;
@@ -750,6 +901,24 @@
     const cities = cur.cities;
     const gatePassed = GATE_DEFS.filter((g) => cur.gate[g.ad] && cur.gate[g.ad].passed).length;
 
+    const wind = mapView === 'wind';
+    document.getElementById('feedColdAir').classList.toggle('is-wind-view', wind);
+    if (viewTabsEl) {
+      for (const button of viewTabsEl.querySelectorAll('[data-view]')) {
+        const selected = button.dataset.view === mapView;
+        button.classList.toggle('is-on', selected);
+        button.setAttribute('aria-selected', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      }
+    }
+    if (mapPanelEl) mapPanelEl.setAttribute('aria-labelledby', wind ? 'coldWindTab' : 'coldProcessTab');
+    el.setAttribute('aria-label', wind ? '广东北风风力分布图，按城市代表站观测着色' : '广东省市界冷空气实况图');
+    if (downloadEl) {
+      const label = wind ? '下载广东北风风力图' : '下载冷空气实况图';
+      downloadEl.setAttribute('aria-label', label);
+      downloadEl.title = label;
+    }
+    if (stripEl) stripEl.setAttribute('aria-label', wind ? '北风风力观测口径' : '冷空气知识与抵达提示');
     const emptyState = isEmpty();
     if (emptyEl) {
       emptyEl.classList.toggle('is-on', emptyState);
@@ -757,7 +926,31 @@
     }
     if (legendEl) {
       legendEl.classList.toggle('is-hidden', emptyState);
-      legendEl.setAttribute('aria-hidden', emptyState ? 'true' : 'false');
+      legendEl.classList.toggle('is-wind', wind);
+    }
+    renderLegendDisclosure();
+
+    if (wind) {
+      stopTipCycle();
+      const readings = GD_CITIES.map((feature) => windReading(String(feature.properties.adcode)));
+      const northCount = readings.filter((reading) => reading.north).length;
+      const missing = readings.filter((reading) => !reading.valid).length;
+      if (chipEl) {
+        chipEl.className = `feed-chip${northCount ? ' is-active' : ''}`;
+        chipEl.textContent = missing === readings.length ? '风场缺测' : `北风 ${northCount}/${readings.length}`;
+      }
+      if (metaEl) metaEl.textContent = `广东 ${readings.length} 市代表站 · 最新观测 ${windTime(windUpdatedAt())}${missing ? ` · ${missing} 市缺测` : ''}`;
+      if (stripTagEl) {
+        stripTagEl.textContent = '观测口径';
+        stripTagEl.classList.remove('is-arrived');
+      }
+      if (stripViewEl) mountStrip('<span class="cold-strip-item">非北风含静风 · 北风不等于冷空气已抵达 · 点击色块查看本站观测时间</span>', 16);
+      if (legendEl) {
+        legendEl.innerHTML = '<b class="cold-wind-legend-title">北风风力（级）</b>' + WIND_KEYS.map((key) =>
+          `<span class="cold-key"><i class="dot${key.color === WIND_MISSING ? ' is-missing' : ''}" style="background:${key.color}"></i>${key.label}</span>`
+        ).join('');
+      }
+      return;
     }
 
     if (chipEl) {
@@ -829,7 +1022,48 @@
     // 先渲染图例（mapLayout 需要图例高度来给上方留白）
     renderStatus();
     renderMap();
+    renderClock();
     renderCityCard();
+  }
+
+  function setMapView(view) {
+    if (view === mapView) return;
+    mapView = view;
+    windLegendExpanded = false;
+    chart.dispatchAction({ type: 'hideTip' });
+    renderStatus();
+    renderMap();
+    renderClock();
+  }
+
+  if (legendToggleEl) {
+    legendToggleEl.addEventListener('click', () => {
+      windLegendExpanded = !windLegendExpanded;
+      renderLegendDisclosure();
+    });
+    legendToggleEl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !windLegendExpanded) return;
+      windLegendExpanded = false;
+      renderLegendDisclosure();
+    });
+  }
+  mobileLegendQuery.addEventListener('change', () => {
+    windLegendExpanded = false;
+    renderLegendDisclosure();
+  });
+
+  if (viewTabsEl) {
+    viewTabsEl.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-view]');
+      if (button) setMapView(button.dataset.view);
+    });
+    viewTabsEl.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const view = event.key === 'Home' ? 'process' : event.key === 'End' ? 'wind' : mapView === 'process' ? 'wind' : 'process';
+      setMapView(view);
+      viewTabsEl.querySelector(`[data-view="${view}"]`).focus();
+    });
   }
 
   // 测试台通过它切换演示状态，正式页面不调用
@@ -887,7 +1121,7 @@
     const res = await fetch(`https://www.nmc.cn/rest/weather?stationid=${encodeURIComponent(code)}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const json = await res.json();
-    const passed = ((json.data && json.data.passedchart) || []).filter((p) => p && p.time).slice(0, 24);
+    const passed = ((json.data && json.data.passedchart) || []).filter((p) => p && p.time);
     const series = passed.map((p) => ({
       t: `${String(p.time).trim().slice(0, 13).replace(' ', 'T')}:00`,
       temp: numOrNull(p.temperature),
@@ -966,6 +1200,15 @@
       liveBusy = false;
     }
   }
+
+  loadEngine().then((engine) => {
+    const base = window.COLD_AIR;
+    if (!engine || !base || !base.series || base.ruleVersion === engine.RULE_VERSION) return;
+    const showingLive = window.COLD_AIR_VIEW.getState() === base;
+    const fresh = { ...base, ...engine.buildState(base.series, base) };
+    window.COLD_AIR = fresh;
+    if (showingLive) window.COLD_AIR_VIEW.setState(fresh);
+  });
 
   if (liveEnabled()) {
     setTimeout(refreshLive, 3000);

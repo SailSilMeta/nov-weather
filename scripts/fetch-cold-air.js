@@ -64,7 +64,7 @@ function cityList() {
 }
 
 function parseSeries(j) {
-  const passed = ((j.data && j.data.passedchart) || []).filter((p) => p && p.time).slice(0, 24);
+  const passed = ((j.data && j.data.passedchart) || []).filter((p) => p && p.time);
   return passed.map((p) => ({
     t: toKey(p.time),
     temp: typeof p.temperature === 'number' && p.temperature > -999 && p.temperature !== 9999 ? p.temperature : null,

@@ -451,6 +451,50 @@ button { font: inherit; color: inherit; }
   .cold-city-note { padding-top: 10px; font-size: 10.5px; }
 }
 
+.cold-view-tabs {
+  display: flex; align-self: flex-start; flex: none; gap: 4px;
+  margin-top: 12px; padding: 4px;
+  border: 1px solid rgba(47, 127, 182, .12); border-radius: 12px;
+  background: #edf4f9;
+}
+.cold-view-tabs button {
+  min-height: 36px; padding: 0 22px; border: 0; border-radius: 8px;
+  background: transparent; color: #607c8e; font-size: 13px; font-weight: 700;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.cold-view-tabs button.is-on {
+  background: #fff; color: #2263a8; box-shadow: 0 2px 6px rgba(20, 60, 80, .1);
+}
+.cold-view-tabs button:focus-visible { outline: 2px solid #2263a8; outline-offset: 2px; }
+.cold-legend.is-wind { min-width: calc(8em + 18px); }
+.cold-wind-legend-title { font-weight: inherit; }
+.cold-legend.is-wind .dot.is-missing { outline: 1px dashed #a6b5bf; outline-offset: -1px; }
+.cold-legend-toggle { display: none; }
+@media (max-width: 760px) {
+  .cold-view-tabs { align-self: stretch; }
+  .cold-view-tabs button { flex: 1; min-height: 44px; padding: 0 12px; }
+  .cold-legend-toggle:not([hidden]) {
+    position: absolute; top: 6px; left: 12px; z-index: 6;
+    display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+    min-height: 44px; padding: 0 7px; border: 0; border-radius: 7px;
+    background: transparent; color: #55707f;
+    font: inherit; font-size: 12px; font-weight: 700;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .cold-legend-toggle::before {
+    content: ''; position: absolute; inset: 6px 0; border-radius: inherit;
+    background: rgba(255, 255, 255, .88);
+    box-shadow: 0 2px 8px rgba(20, 60, 80, .1);
+  }
+  .cold-legend-toggle span, .cold-legend-toggle svg { position: relative; }
+  .cold-legend-toggle svg { width: 12px; height: 12px; }
+  .cold-legend-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .cold-legend-toggle:focus-visible { outline: none; }
+  .cold-legend-toggle:focus-visible::before { outline: 2px solid #2263a8; outline-offset: 2px; }
+  .cold-legend.is-wind { top: 50px; }
+  .cold-legend.is-wind.is-collapsed { opacity: 0; visibility: hidden; }
+}
+
 /* 冷空气卡：提醒条 + 地图 + 图例 */
 .cold-strip {
   flex: none;

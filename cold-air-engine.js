@@ -7,10 +7,11 @@
   // 南岭山口关键站：四站全部达标 = 冷空气主体越过南岭
   const GATE_STATIONS = { 440200: '韶关', 441800: '清远', 441600: '河源', 441400: '梅州' };
 
+  const RULE_VERSION = 2;
   const CFG = {
     windHours: 3,        // 连续 3 小时稳定偏北风
     tempHours: 4,        // 连续 4 小时气温不回升
-    gateDrop: 4,         // 南岭站累计降温门槛 ℃
+    gateRules: [{ drop: 6, level: 2 }, { drop: 3, level: 3 }],
     cityDrop: 3,         // 单站累计降温门槛 ℃
     minWindSpeed: 1.6,   // 2 级风下限 m/s
     maxSpread: 45,       // 风向稳定区间 ±45°
@@ -113,6 +114,38 @@
     }
   }
 
+  function gateReading(series, index) {
+    const cur = series[index];
+    const baseTime = cur ? toMs(cur.t) - 24 * HOUR_MS : NaN;
+    const base = series.find((x) => toMs(x.t) === baseTime);
+    const rawDrop = base && cur && Number.isFinite(base.temp) && Number.isFinite(cur.temp)
+      ? base.temp - cur.temp : null;
+    const north = !!cur && isNorth(cur.dir);
+    const level = cur && Number.isFinite(cur.spd) ? windLevel(cur.spd) : null;
+    const passed = rawDrop != null && north && level != null
+      && CFG.gateRules.some((rule) => rawDrop + 1e-9 >= rule.drop && level >= rule.level);
+    return { drop: rawDrop == null ? null : round1(rawDrop), north, level, passed };
+  }
+
+  function findGateQualify(series, minAt) {
+    for (let m = 0; m < series.length; m++) {
+      const cur = series[m];
+      if (minAt && cur.t <= minAt) continue;
+      const reading = gateReading(series, m);
+      if (!reading.passed) continue;
+      let s = m;
+      while (s > 0) {
+        const prev = series[s - 1];
+        if (!isNorth(prev.dir) || !(prev.spd >= CFG.minWindSpeed)
+          || toMs(series[s].t) - toMs(prev.t) !== HOUR_MS) break;
+        s--;
+      }
+      const base = series.find((x) => toMs(cur.t) - toMs(x.t) === 24 * HOUR_MS);
+      return { at: cur.t, sAt: series[s].t, drop: reading.drop, baseT: base.temp, t: cur.temp };
+    }
+    return null;
+  }
+
   function prune(series) {
     if (!series.length) return series;
     const latest = toMs(series[series.length - 1].t);
@@ -130,6 +163,7 @@
 
   // seriesByAdcode: { adcode: [{t,temp,dir,spd,rain}] } 升序
   function buildState(seriesByAdcode, prev) {
+    if (prev.ruleVersion !== RULE_VERSION) prev = {};
     const latestKey = latest(Object.values(seriesByAdcode));
     let closedAt = prev.closedAt || '';
 
@@ -137,7 +171,7 @@
     const gates = {};
     for (const [ad, name] of Object.entries(GATE_STATIONS)) {
       const series = seriesByAdcode[ad] || [];
-      let hit = series.length ? findQualify(series, closedAt, CFG.gateDrop) : null;
+      let hit = findGateQualify(series, closedAt);
       if (!hit && prev.event && prev.event.gate && prev.event.gate[ad] && prev.event.status === 'active') {
         hit = prev.event.gate[ad];
       }
@@ -250,6 +284,7 @@
 
     return {
       source: 'nmc',
+      ruleVersion: RULE_VERSION,
       updatedAt: latestKey,
       event: event || {
         status: 'watching',
@@ -270,8 +305,11 @@
 
   return {
     CFG,
+    RULE_VERSION,
     GATE_STATIONS,
     buildState,
+    gateReading,
+    findGateQualify,
     qualifyAt,
     findQualify,
     runStart,

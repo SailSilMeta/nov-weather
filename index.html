@@ -103,16 +103,24 @@
           </div>
           <span class="feed-chip" id="coldChip">监测中</span>
         </header>
+        <div class="cold-view-tabs" id="coldViewTabs" role="tablist" aria-label="冷空气地图视图">
+          <button id="coldProcessTab" type="button" role="tab" data-view="process" aria-selected="true" aria-controls="coldMapPanel" class="is-on">过程追踪</button>
+          <button id="coldWindTab" type="button" role="tab" data-view="wind" aria-selected="false" aria-controls="coldMapPanel" tabindex="-1">北风风力</button>
+        </div>
         <p class="feed-meta" id="coldMeta">南岭四站 0/4 达标 · 等待冷空气主体南下</p>
         <div class="cold-strip" id="coldStrip" aria-label="冷空气知识提示">
           <span class="cold-strip-tag" id="coldStripTag">冷知识</span>
           <div class="cold-strip-view" id="coldStripView"></div>
         </div>
-        <div class="cold-map-wrap">
+        <div class="cold-map-wrap" id="coldMapPanel" role="tabpanel" aria-labelledby="coldProcessTab">
           <div class="feed-map" id="feedColdAirMap" aria-label="广东省市界冷空气实况图"></div>
           <div class="cold-empty" id="coldEmpty" aria-hidden="true">
             <strong>当前暂无冷空气过程</strong>
           </div>
+          <button class="cold-legend-toggle" id="coldLegendToggle" type="button" aria-controls="coldLegend" aria-expanded="false" aria-label="展开北风风力图例" hidden>
+            <span>图例</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <div class="cold-legend" id="coldLegend"></div>
           <div class="cold-clock" id="coldClock">--</div>
           <button class="cold-download" id="coldDownload" type="button" aria-label="下载冷空气实况图" title="下载冷空气实况图">

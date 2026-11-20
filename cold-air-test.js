@@ -39,7 +39,7 @@
     const engine = window.COLD_AIR_ENGINE;
     const demo = window.COLD_AIR_DEMO;
     const view = window.COLD_AIR_VIEW;
-    const { CFG, GATE_STATIONS, buildState, runStart, round1, windText, windLevel } = engine;
+    const { CFG, GATE_STATIONS, buildState, gateReading, runStart, round1, windText, windLevel } = engine;
     if (!demo || !demo.series || !demo.hours) return null;
 
     const clone = (obj) => JSON.parse(JSON.stringify(obj));
@@ -85,7 +85,7 @@
         for (const ad of adcodes) {
           const arr = series[ad];
           const end = h + 1;
-          sliced[ad] = arr.slice(Math.max(0, end - span), end);
+          sliced[ad] = arr.slice(Math.max(0, h - span), end);
         }
         const st = buildState(sliced, prev);
         states.push(st);
@@ -214,40 +214,55 @@
         const ad = selectedAd();
         const city = ws.cities[ad];
         const name = (cityMeta.get(ad) || {}).short || ad;
-        const arr = series[ad] || [];
-        const idx = Math.min(frame, arr.length - 1);
-        const s = arr.length ? runStart(arr, idx) : -1;
-        const northH = s >= 0 ? idx - s + 1 : 0;
-        let steady = s >= 0;
-        if (steady) {
-          for (let k = s + 1; k <= idx; k++) {
-            if (arr[k].temp == null || arr[k - 1].temp == null || arr[k].temp > arr[k - 1].temp + 0.05) {
-              steady = false;
-              break;
+        let items;
+        if (GATE_STATIONS[ad]) {
+          const arr = (st && st.series[ad]) || [];
+          const reading = gateReading(arr, arr.length - 1);
+          const cur = arr[arr.length - 1];
+          const wind = cur ? windText(cur.dir) : '';
+          const passed = !!(ws.gate[ad] && ws.gate[ad].passed);
+          items = [
+            [`${name} ${wind || '风向缺测'} ${reading.level == null ? '风力缺测' : `${reading.level}级`}`, reading.north && reading.level >= 2],
+            [reading.drop == null ? '缺少24h对比气温' : `24h${reading.drop >= 0 ? '降温' : '升温'} ${Math.abs(reading.drop)}℃`, reading.drop != null],
+            [CFG.gateRules.map((rule) => `24h降温≥${rule.drop}℃ + 北风≥${rule.level}级`).join('，或 '), reading.passed],
+            [passed ? '关口已达标' : '关口未达标', passed],
+          ];
+        } else {
+          const arr = series[ad] || [];
+          const idx = Math.min(frame, arr.length - 1);
+          const s = arr.length ? runStart(arr, idx) : -1;
+          const northH = s >= 0 ? idx - s + 1 : 0;
+          let steady = s >= 0;
+          if (steady) {
+            for (let k = s + 1; k <= idx; k++) {
+              if (arr[k].temp == null || arr[k - 1].temp == null || arr[k].temp > arr[k - 1].temp + 0.05) {
+                steady = false;
+                break;
+              }
             }
           }
+          const steadyH = steady ? idx - s + 1 : 0;
+          const base = s > 0 ? arr[s - 1] : null;
+          const hasBase = !!(base && base.temp != null && arr[idx] && arr[idx].temp != null);
+          const drop = hasBase ? round1(base.temp - arr[idx].temp) : 0;
+          const orig = (baseSeries[ad] || [])[idx];
+          const manual = orig && orig.temp != null && arr[idx] && arr[idx].temp != null ? round1(orig.temp - arr[idx].temp) : 0;
+          const natural = idx >= 3 && arr[idx - 3] && arr[idx - 3].temp != null && arr[idx].temp != null
+            ? round1(arr[idx - 3].temp - arr[idx].temp) : 0;
+          const observed = Math.abs(manual) >= 0.1 ? manual : natural;
+          const need = CFG.cityDrop;
+          const kind = arr.slice(Math.max(0, s), idx + 1).reduce((sum, x) => sum + (x.rain || 0), 0) >= 0.1 ? '锋面型' : '干冷';
+          const dropLabel = hasBase
+            ? `降温 ${drop}℃ / ≥${need}℃`
+            : observed >= 0 ? `降温 ${observed}℃ · 待北风` : `升温 ${Math.abs(observed)}℃ · 待北风`;
+          items = [
+            [`${name} 北风 ${northH}h / 3h`, northH >= CFG.windHours],
+            [`不回升 ${steadyH}h / 4h`, steadyH >= CFG.tempHours],
+            [dropLabel, hasBase && drop >= need],
+            [`${kind}${city && city.status === 'arrived' ? ' · 已转蓝' : ''}`, !!(city && city.status === 'arrived')],
+          ];
         }
-        const steadyH = steady ? idx - s + 1 : 0;
-        const base = s > 0 ? arr[s - 1] : null;
-        const hasBase = !!(base && base.temp != null && arr[idx] && arr[idx].temp != null);
-        const drop = hasBase ? round1(base.temp - arr[idx].temp) : 0;
-        // 无连续北风时规则不建立基准，改显示「相对演示原始值」或近 3h 的观测变化，避免误报为 0
-        const orig = (baseSeries[ad] || [])[idx];
-        const manual = orig && orig.temp != null && arr[idx] && arr[idx].temp != null ? round1(orig.temp - arr[idx].temp) : 0;
-        const natural = idx >= 3 && arr[idx - 3] && arr[idx - 3].temp != null && arr[idx].temp != null
-          ? round1(arr[idx - 3].temp - arr[idx].temp) : 0;
-        const observed = Math.abs(manual) >= 0.1 ? manual : natural;
-        const need = GATE_STATIONS[ad] ? CFG.gateDrop : CFG.cityDrop;
-        const kind = arr.slice(Math.max(0, s), idx + 1).reduce((sum, x) => sum + (x.rain || 0), 0) >= 0.1 ? '锋面型' : '干冷';
-        const dropLabel = hasBase
-          ? `降温 ${drop}℃ / ≥${need}℃`
-          : observed >= 0 ? `降温 ${observed}℃ · 待北风` : `升温 ${Math.abs(observed)}℃ · 待北风`;
-        checks.innerHTML = [
-          [`${name} 北风 ${northH}h / 3h`, northH >= CFG.windHours],
-          [`不回升 ${steadyH}h / 4h`, steadyH >= CFG.tempHours],
-          [dropLabel, hasBase && drop >= need],
-          [`${kind}${city && city.status === 'arrived' ? ' · 已转蓝' : ''}`, !!(city && city.status === 'arrived')],
-        ].map(([label, ok]) => `<span class="ct-check${ok ? ' is-ok' : ''}">${label}</span>`).join('');
+        checks.innerHTML = items.map(([label, ok]) => `<span class="ct-check${ok ? ' is-ok' : ''}">${label}</span>`).join('');
       }
 
       if (note) {
