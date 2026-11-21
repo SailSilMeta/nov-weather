@@ -67,16 +67,27 @@ async function fetchNews(page) {
   }
 }
 
-async function fetchIndex() {
-  const pages = await Promise.all(Array.from({ length: PAGE_COUNT }, (_, i) => fetchNews(i + 1)));
+async function fetchIndex(onPartial) {
+  // 第 1 页是最新资讯，必须成功；其余页失败只降级为更少的条目。
+  const results = await Promise.allSettled(Array.from({ length: PAGE_COUNT }, (_, i) => fetchNews(i + 1)));
+  if (results[0].status === 'rejected') throw results[0].reason;
   const seen = new Set();
   const items = [];
-  for (const list of pages) {
-    for (const item of list) {
+  const failed = [];
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      failed.push(i + 1);
+      return;
+    }
+    for (const item of result.value) {
       if (seen.has(item.url)) continue;
       seen.add(item.url);
       items.push(item);
     }
+  });
+  if (failed.length) {
+    console.warn(`gd121 pages failed: ${failed.join(',')}`);
+    if (typeof onPartial === 'function') onPartial(failed);
   }
   if (!items.length) throw new Error('gd121 empty index');
   return items;

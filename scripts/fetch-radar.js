@@ -232,7 +232,8 @@ async function fetchMacau() {
 }
 
 async function fetchNews() {
-  const result = await news.fetchIndex();
+  let failedPages = [];
+  const result = await news.fetchIndex((pages) => { failedPages = pages; });
   if (!Array.isArray(result) || !result.length) throw new Error('empty news index');
   const items = result.slice(0, 200).map((item) => {
     if (!item || typeof item.title !== 'string' || !item.title.trim() ||
@@ -247,29 +248,60 @@ async function fetchNews() {
     fetchedAt: new Date().toISOString(),
     items,
   });
-  return `${items.length} items, JSON ${bytes} B`;
+  const partial = failedPages.length ? `, pages ${failedPages.join('/')} failed` : '';
+  return `${items.length} items${partial}, JSON ${bytes} B`;
+}
+
+async function writeSummary(rows) {
+  const failed = rows.filter((row) => !row.ok);
+  const detail = (text) => String(text).replace(/\|/g, '\\|');
+  const lines = [
+    '### Radar snapshot refresh',
+    '',
+    '| Source | Result | Detail |',
+    '| --- | --- | --- |',
+    ...rows.map((row) => `| ${row.name} | ${row.ok ? 'OK' : 'FAILED'} | ${detail(row.detail)} |`),
+    '',
+    failed.length ? `**${failed.length}/${rows.length} sources failed.**` : 'All sources updated.',
+  ];
+  const text = `${lines.join('\n')}\n`;
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, text)
+      .catch((error) => console.warn(`step summary write failed: ${error.message}`));
+  }
+  return text;
 }
 
 async function main() {
   const fetchImpl = globalThis.fetch;
   globalThis.fetch = limitedFetch(fetchImpl);
-  let succeeded = 0;
+  const rows = [];
   try {
     // Keep sources independent; a failed source never rewrites its previous JSON.
     for (const [name, task] of [['gz', fetchGuangzhou], ['jm', fetchJiangmen], ['mo', fetchMacau], ['news', fetchNews]]) {
       try {
-        const summary = await task();
-        succeeded++;
-        console.log(`${name}: OK ${summary}`);
+        rows.push({ name, ok: true, detail: await task() });
       } catch (error) {
-        console.error(`${name}: FAILED ${error.message}; previous JSON/fetchedAt unchanged (if present)`);
+        rows.push({ name, ok: false, detail: error.message });
       }
     }
   } finally {
     globalThis.fetch = fetchImpl;
   }
-  console.log(`radar snapshots: ${succeeded}/4 sources updated`);
+  const succeeded = rows.filter((row) => row.ok).length;
+  for (const row of rows) {
+    if (row.ok) console.log(`${row.name}: OK ${row.detail}`);
+    else {
+      console.error(`${row.name}: FAILED ${row.detail}; previous JSON/fetchedAt unchanged (if present)`);
+      console.log(`::error::${row.name} snapshot failed: ${row.detail}`);
+    }
+  }
+  const summary = await writeSummary(rows);
+  console.log(summary);
+  console.log(`radar snapshots: ${succeeded}/${rows.length} sources updated`);
   if (!succeeded) throw new Error('all radar/news sources failed');
+  // 部分成功仍提交已抓到的快照，但用非零退出码让运行标红（workflow 里 continue-on-error 后再显式失败）。
+  if (succeeded < rows.length) process.exitCode = 1;
 }
 
 if (require.main === module) {

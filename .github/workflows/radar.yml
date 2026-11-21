@@ -35,6 +35,8 @@ jobs:
         with:
           node-version: 22
       - name: Fetch radar and news snapshots
+        id: fetch
+        continue-on-error: true
         run: node scripts/fetch-radar.js
       - name: Commit and push snapshot changes
         id: publish
@@ -100,3 +102,9 @@ jobs:
                 ;;
             esac
           fi
+      - name: Fail if any snapshot source failed
+        if: steps.fetch.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error::One or more snapshot sources failed. Successful sources were still committed; check the job summary and fetch log."
+          exit 1

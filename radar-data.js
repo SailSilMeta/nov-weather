@@ -1,9 +1,44 @@
 (function () {
   'use strict';
 
-  const RADAR_TTL = 30 * 60e3;
-  const NEWS_TTL = 24 * 3600e3;
+  const RADAR_TTL = 12 * 3600e3;
+  const NEWS_TTL = 7 * 24 * 3600e3;
   const FRAME_LIMIT = 30;
+  const JM_FRAME_PATTERNS = {
+    jmsc: /^scradar(?:[1-9]|10)\.png$/,
+    jmjm: /^ZWCR(?:[1-9]|10)\.png$/,
+    jmgd: /^NEW_AWS_GD_CAPPI_[1-8]\.PNG$/,
+  };
+
+  function apiUrl(path) {
+    const base = String(window.QXKSH_API_BASE || '').replace(/\/+$/, '');
+    return `${base}${path.charAt(0) === '/' ? path : `/${path}`}`;
+  }
+
+  let apiProbe = null;
+
+  // 纯静态托管没有 /api，探测一次后本会话直接走快照，避免每次刷新都白跑请求。
+  function apiAvailable() {
+    if (!apiProbe) {
+      apiProbe = (async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          const response = await fetch(apiUrl('/api/health'), {
+            cache: 'no-store', credentials: 'omit', signal: controller.signal,
+          });
+          if (!response.ok) return false;
+          const data = await response.json().catch(() => null);
+          return Boolean(data && data.ok);
+        } catch (error) {
+          return false;
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+    }
+    return apiProbe;
+  }
 
   async function readJson(url) {
     const controller = new AbortController();
@@ -152,9 +187,7 @@
         && frame.src === `https://www.gzqxfw.com.cn/data/swanmcrHttp/GZ/${frame.file}`;
     }
     const pattern = {
-      jmsc: /^scradar(?:[1-9]|10)\.png$/,
-      jmjm: /^ZWCR(?:[1-9]|10)\.png$/,
-      jmgd: /^NEW_AWS_GD_CAPPI_[1-8]\.PNG$/,
+      ...JM_FRAME_PATTERNS,
       moRadar: /^radar(?:0[1-9]|10)\.jpg$/,
       moLight: /^llis(?:0[1-9]|10)\.png$/,
     }[product.key];
@@ -175,28 +208,111 @@
     });
   }
 
+  function proxyFrame(sourceKey, product, frame) {
+    if (!frame || typeof frame.file !== 'string' || typeof frame.src !== 'string') return null;
+    const expected = sourceKey === 'gz'
+      ? `/api/gz-radar/img?file=${encodeURIComponent(frame.file)}`
+      : `/api/jm-radar/img?type=${encodeURIComponent(product.key)}&file=${encodeURIComponent(frame.file)}`;
+    const fileOk = sourceKey === 'gz'
+      ? /^\d{8}\/[A-Za-z0-9_.-]+\.png$/.test(frame.file)
+      : Boolean(JM_FRAME_PATTERNS[product.key]?.test(frame.file));
+    if (!fileOk || frame.src !== expected) return null;
+    return { file: frame.file, src: apiUrl(frame.src), clock: String(frame.clock || ''), stamp: String(frame.stamp || '') };
+  }
+
+  function proxyProduct(sourceKey, product, row) {
+    if (!row || row.error || !Array.isArray(row.frames)) return null;
+    const frames = row.frames.map((frame) => proxyFrame(sourceKey, product, frame));
+    if (frames.some((frame) => !frame)) return null;
+    if (!frames.length && !row.maintenance) return null;
+    return { ...productFrames(product, frames), stale: Boolean(row.stale), partial: Boolean(row.partial) };
+  }
+
+  async function radarProxy(source) {
+    const data = await readJson(apiUrl(`/api/${source.key}-radar?t=${Date.now()}`));
+    if (!Array.isArray(data?.products)) throw new Error('雷达接口格式无效');
+    return source.products.map((product) => proxyProduct(source.key,
+      product, data.products.find((item) => item?.key === product.key)));
+  }
+
+  async function radarProxyThenSnapshot(source) {
+    const apiUp = await apiAvailable();
+    let live = null;
+    if (apiUp) {
+      try {
+        live = await radarProxy(source);
+      } catch (error) {
+        /* 接口存在但抓取失败时继续回落快照 */
+      }
+    }
+    if (live && live.every(Boolean)) return live;
+    let backup;
+    try {
+      backup = await radarSnapshot(source);
+    } catch (error) {
+      if (live) return source.products.map((product, i) => live[i] || failedProduct(product));
+      throw error;
+    }
+    return source.products.map((product, i) => {
+      if (live?.[i]) return live[i];
+      const saved = backup[i];
+      return saved.error ? saved : { ...saved, fallback: apiUp };
+    });
+  }
+
   async function load(source) {
     try {
       if (source.key === 'dg') return await dongguan(source);
       if (source.key === 'zh') return await zhuhai(source);
       if (source.key === 'fs') return await foshan(source);
       if (source.key === 'mo') return await macau(source);
-      return await radarSnapshot(source);
+      return await radarProxyThenSnapshot(source);
     } catch (error) {
       const note = ['gz', 'jm'].includes(source.key) ? error.message : '官方数据暂不可用';
       return source.products.map((product) => failedProduct(product, note));
     }
   }
 
-  async function loadNews(page) {
+  function validNewsItem(item) {
+    return item && typeof item.title === 'string' && item.title.trim()
+      && typeof item.time === 'string' && typeof item.url === 'string'
+      && item.url.startsWith('https://www.gd121.cn/');
+  }
+
+  async function liveNews(page) {
+    const data = await readJson(apiUrl(`/api/gd-news?page=${Math.max(1, page)}&t=${Date.now()}`));
+    if (!Array.isArray(data?.items) || !data.items.every(validNewsItem)) throw new Error('资讯接口格式无效');
+    const totalPages = Math.max(1, Math.min(50, Number(data.totalPages) || 1));
+    const fetchedAt = Date.parse(data.fetchedAt || '');
+    return {
+      items: data.items.slice(0, 12),
+      page: Math.max(1, Math.min(totalPages, Number(data.page) || page)),
+      totalPages,
+      snapshotAt: Number.isFinite(fetchedAt) ? Math.min(fetchedAt, Date.now()) : Date.now(),
+      live: true,
+      validUntil: 0,
+    };
+  }
+
+  async function snapshotNews(page) {
     const { data, snapshotAt, validUntil } = await snapshot('news', NEWS_TTL);
     if (!Array.isArray(data.items)) throw new Error('资讯快照格式无效');
-    const items = data.items.filter((item) => item && typeof item.title === 'string' && item.title.trim()
-      && typeof item.time === 'string' && typeof item.url === 'string' && item.url.startsWith('https://www.gd121.cn/'));
+    const items = data.items.filter(validNewsItem);
     if (items.length !== data.items.length) throw new Error('资讯快照格式无效');
     const totalPages = Math.max(1, Math.ceil(items.length / 12));
     const current = Math.max(1, Math.min(totalPages, page));
     return { items: items.slice((current - 1) * 12, current * 12), page: current, totalPages, snapshotAt, validUntil };
+  }
+
+  async function loadNews(page) {
+    if (await apiAvailable()) {
+      try {
+        return await liveNews(page);
+      } catch (error) {
+        /* 接口失败时回落快照 */
+      }
+    }
+    return snapshotNews(page);
   }
 
   window.LocalRadarData = { load, loadNews, stamp };

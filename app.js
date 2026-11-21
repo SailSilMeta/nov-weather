@@ -2483,8 +2483,11 @@
       radarNews.validUntil = data.validUntil;
       radarNewsListEl.innerHTML = data.items.length ? data.items.map(radarNewsRowHtml).join('') : radarNewsStateHtml('暂无气象资讯', false);
       radarNewsListEl.scrollTop = 0;
-      $('#radarNewsSource').textContent = `快照 ${LocalRadarData.stamp(data.snapshotAt).stamp}`;
-      $('#radarNewsSource').title = '广东省气象局 · 抓取时间（北京时间），非实时资讯';
+      const label = LocalRadarData.stamp(data.snapshotAt).stamp;
+      $('#radarNewsSource').textContent = data.live ? `官方直连 ${label}` : `快照 ${label}`;
+      $('#radarNewsSource').title = data.live
+        ? '广东省气象局 · 接口实时抓取（北京时间）'
+        : '广东省气象局 · 抓取时间（北京时间），非实时资讯';
       renderRadarPager();
     } catch (e) {
       radarNews.validUntil = 0;

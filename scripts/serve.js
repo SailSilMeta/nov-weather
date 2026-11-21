@@ -550,6 +550,7 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
   }
+  if (pathname === '/api/health') return sendApi(req, res, 200, { ok: true });
   if (pathname === '/api/gd-fire') {
     try {
       return await handleGdFire(req, res);
