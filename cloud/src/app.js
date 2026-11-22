@@ -159,7 +159,9 @@ async function handleRadar(request, url, match) {
     const result = await provider.list(force);
     return json(result);
   } catch (e) {
-    return json({ products: [] }, 502);
+    const message = e && e.message ? e.message : String(e);
+    console.error(`radar ${match[1]}: ${message}`);
+    return json({ products: [], error: message }, 502);
   }
 }
 
@@ -181,26 +183,30 @@ export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const url = new URL(request.url);
-    const path = url.pathname;
+    /* 网关可能已去掉 /api 前缀，统一补回后再路由 */
+    const path = url.pathname === '/api' || url.pathname.startsWith('/api/')
+      ? url.pathname
+      : `/api${url.pathname.startsWith('/') ? '' : '/'}${url.pathname}`;
+    const target = path === url.pathname ? url : new URL(`${url.origin}${path}${url.search}`);
 
-    if (path === '/api/radar/auth') return handleAuth(request, url, env, false);
-    if (path === '/api/radar/auth/verify') return handleAuth(request, url, env, true);
-    if (path === '/api/warning-hkmo') return handleHkmo(request, url, env);
-    if (path === '/api/gd-news') return handleNews(url);
-    if (path === '/api/gd-fire') return json(await handleFire(url.searchParams.get('fresh') === '1'));
+    if (path === '/api/radar/auth') return handleAuth(request, target, env, false);
+    if (path === '/api/radar/auth/verify') return handleAuth(request, target, env, true);
+    if (path === '/api/warning-hkmo') return handleHkmo(request, target, env);
+    if (path === '/api/gd-news') return handleNews(target);
+    if (path === '/api/gd-fire') return json(await handleFire(target.searchParams.get('fresh') === '1'));
     if (path === '/api/announcements' || path.startsWith('/api/announcements/')) {
-      return handleAnnouncements(request, url, env);
+      return handleAnnouncements(request, target, env);
     }
     if (path === '/api/health') {
       return json({
         ok: true,
         auth: Boolean(env.RADAR_AUTH_SECRET),
-        announcements: Boolean(env.PG_CONNECTION_STRING || env.PG_HOST),
+        announcements: Boolean(env.PG_GATEWAY_URL && env.PG_GATEWAY_KEY),
       });
     }
 
     const radarMatch = path.match(RADAR_ROUTE);
-    if (radarMatch) return handleRadar(request, url, radarMatch);
+    if (radarMatch) return handleRadar(request, target, radarMatch);
 
     return json({ ok: false, error: 'not_found' }, 404);
   },

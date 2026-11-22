@@ -1,16 +1,22 @@
-# 公告栏接入腾讯云 CloudBase 指南
+# CloudBase 云函数接入指南（公告 + 雷达 + 新闻）
 
-这份文档只做一件事：把首页公告栏的数据从静态 JSON 切到 **腾讯云 CloudBase 云函数 + PostgreSQL**，并启用公告管理页。雷达、新闻、预警等接口不在这份文档范围内，公告函数里也不会包含它们。
+这份文档把首页公告栏的数据从静态 JSON 切到 **腾讯云 CloudBase 云函数 + PostgreSQL**，并启用公告管理页；同一个函数还代理**浏览器无法跨站直连**的雷达和资讯，供 GitHub Pages 等纯静态站点使用。
+
+为了节省免费额度，只把必须经服务器转发的源接进 CloudBase：
 
 ```text
 首页公告栏 ──▶ https://<HTTP访问域名>/api/announcements
+广州/江门雷达、广东资讯 ──▶ /api/gz-radar、/api/jm-radar、/api/gd-news
                         │
-                CloudBase 云函数（仅公告）
+        CloudBase 云函数（公告 + 上述转发）
                         │
         CloudBase PostgreSQL（REST 网关 + 环境 API Key）
 管理页 ─────▶ /api/announcements/admin（Bearer 口令）
-接口不可用 ─▶ data/announcements.json（静态兜底，自动切换）
+东莞/珠海/佛山/澳门 ──▶ 浏览器直连官方站点（不消耗云函数额度）
+接口不可用 ─▶ data/announcements.json、data/radar*.json（静态兜底，自动切换）
 ```
+
+东莞（dg）、珠海（zh）、佛山（fs）、澳门（mo）可以跨站直连，**不走云函数**；函数里虽然还保留它们的转发接口，但页面不会调用，因此不产生调用量。雷达和新闻接口只做转发，不写数据库；公告接口才需要 PostgreSQL。
 
 函数不直连数据库端口，而是通过 CloudBase 的 PostgreSQL REST 网关访问：不需要数据库密码，也不需要配置 VPC。网关地址形如：
 
@@ -95,12 +101,17 @@ dist/nov-weather-announce.zip   ← 上传这个（约 4 KB）
    - 超时时间：20 秒
 3. 代码上传方式选 **ZIP 包**，上传 `dist/nov-weather-announce.zip`，点击部署。
 
-这个函数只响应两个路径：
+这个函数响应以下路径：
 
-- `/api/announcements`、`/api/announcements/*`
-- `/api/health`
+- 公告：`/api/announcements`、`/api/announcements/*`
+- 健康检查：`/api/health`
+- 雷达列表与图片：`/api/{gz,jm,mo,dg,zh,fs}-radar`、`/api/{gz,jm,mo,dg,zh,fs}-radar/img`
+- 广东资讯：`/api/gd-news?page=1`
+- 火点/港澳预警：`/api/gd-fire`、`/api/warning-hkmo`
 
-访问其他路径返回 404 是正常的，说明公告函数没有混入其他接口。
+页面实际只调用 `gz-radar`、`jm-radar`、`gd-news`（外加公告与健康检查）；`mo/dg/zh/fs` 的转发接口只是保留能力，不调用就不计费。
+
+体验版环境默认把函数内存限制在 64 MB；仓库根目录的 `cloudbaserc.json` 已按 64 MB 固定，直接 `tcb fn deploy` 即可，不要再调高。
 
 ## 第 4 步：创建环境 API Key
 
@@ -130,7 +141,8 @@ tcb env apikey create nov-weather-announce \
 - `PG_GATEWAY_URL` 末尾不要带斜杠。
 - 不再需要 `PG_HOST` / `PG_PASSWORD` / `PG_CONNECTION_STRING`，也不需要 VPC。
 - `ANNOUNCE_ADMIN_TOKEN` 少于 16 位时，管理接口会一直拒绝。
-- 公告函数不需要 `RADAR_AUTH_SECRET`，也不需要任何外网上游。
+- 雷达/新闻转发不需要额外变量；`RADAR_AUTH_SECRET` 只用于 `/api/radar/auth*` 测试接口，不配也不影响页面。
+- 函数需要访问外网（CloudBase 默认允许），用来抓取各气象站点和资讯页。
 
 保存环境变量后，重新部署一次函数使配置生效。
 
@@ -183,20 +195,16 @@ curl -s -X POST "$API/api/announcements/admin" \
 
 ## 第 8 步：前端接入
 
-1. 编辑仓库根目录的 [api-config.js](api-config.js)，找到 `ANNOUNCE_API`：
+[api-config.js](api-config.js) 已经按运行环境自动选择接口：
 
-   ```js
-   var ANNOUNCE_API = 'https://<环境ID>.service.tcloudbase.com';
-   ```
+- 本地 / 局域网：走 `scripts/serve.js` 提供的同源 `/api`
+- Qoder Sites：走同源的 `/functions/v1/app`
+- GitHub Pages 等纯静态托管：走文件顶部的 `CLOUD_API`
+- 公告管理页：走 `ANNOUNCE_API`（与 `CLOUD_API` 同一个 HTTP 访问服务根地址）
 
-   - 填 HTTP 访问服务的根地址
-   - **不要带结尾斜杠**
-   - **不要带 `/api`**
+换环境时只改这两个常量，**不要带结尾斜杠，也不要带 `/api`**。改完提交并推送到 GitHub，等 Pages 重新发布。
 
-2. 提交并推送到 GitHub，等 GitHub Pages 重新发布。
-3. 打开首页，公告栏会先请求接口；接口超时或失败时自动回落到 `data/announcements.json`，不会空白。
-
-想暂时不接云端时，把 `ANNOUNCE_API` 留空即可，公告栏继续读静态 JSON。
+打开地方雷达页时：广州雷达、江门三站雷达和资讯请求 CloudBase 接口，失败时自动回落到 `data/radar*.json` 快照；东莞、珠海、佛山、澳门保持浏览器直连，只有直连失败时才使用静态快照，始终不经过云函数。这样页面不会空白，云函数调用量也保持在最低。想暂时不接云端时，把 `CLOUD_API` 和 `ANNOUNCE_API` 留空，页面继续读静态 JSON。
 
 ## 第 9 步：使用管理页
 
@@ -260,6 +268,7 @@ https://<用户名>.github.io/<仓库名>/announcements-admin.html
 ## 费用与关停
 
 - CloudBase 环境按量计费，公告接口调用量很小，主要成本是 PostgreSQL 实例。
+- 体验版免费额度有限：页面只让 gz/jm 雷达与资讯走云函数，dg/zh/fs/mo 直连官方站点；云函数内雷达图片缓存 45 秒，某个源接口失败后本会话不再重试，尽量少消耗调用次数。
 - 不用时：删除 HTTP 访问服务路由、删除云函数、销毁 PostgreSQL 实例即可停止计费。
 - 定期备份 `announcements` 表（`pg_dump` 或导出表数据）。
 
@@ -273,3 +282,7 @@ https://<用户名>.github.io/<仓库名>/announcements-admin.html
 | PUT | `/api/announcements/admin/:id` | Bearer | 更新 |
 | DELETE | `/api/announcements/admin/:id` | Bearer | 删除 |
 | GET | `/api/health` | 无 | 数据库是否已配置 |
+| GET | `/api/gd-news?page=1` | 无 | 广东气象资讯（10 页缓存 10 分钟） |
+| GET | `/api/gz-radar`、`/api/jm-radar` | 无 | 广州/江门雷达帧列表（页面使用） |
+| GET | `/api/mo-radar`、`/api/dg-radar`、`/api/zh-radar`、`/api/fs-radar` | 无 | 保留能力，页面不调用（直连官方站点） |
+| GET | `/api/<源>-radar/img?type=&file=` | 无 | 雷达图片二进制代理（仅 gz/jm 页面使用） |

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "envId": "nov-weather1-gonggao-d2a0f393f4b",
+  "functions": [
+    {
+      "name": "nov-weather-announce",
+      "runtime": "Nodejs18.15",
+      "handler": "index.main",
+      "timeout": 20,
+      "memorySize": 64
+    }
+  ]
+}

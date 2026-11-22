@@ -16,13 +16,14 @@
   }
 
   let apiProbe = null;
+  const apiFailures = new Set();
 
   // 纯静态托管没有 /api，探测一次后本会话直接走快照，避免每次刷新都白跑请求。
   function apiAvailable() {
     if (!apiProbe) {
       apiProbe = (async () => {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
+        const timer = setTimeout(() => controller.abort(), 8000);
         try {
           const response = await fetch(apiUrl('/api/health'), {
             cache: 'no-store', credentials: 'omit', signal: controller.signal,
@@ -235,14 +236,17 @@
       product, data.products.find((item) => item?.key === product.key)));
   }
 
+  const DIRECT_LOAD = { dg: dongguan, zh: zhuhai, fs: foshan, mo: macau };
+
   async function radarProxyThenSnapshot(source) {
-    const apiUp = await apiAvailable();
+    const apiUp = (await apiAvailable()) && !apiFailures.has(source.key);
     let live = null;
     if (apiUp) {
       try {
         live = await radarProxy(source);
       } catch (error) {
-        /* 接口存在但抓取失败时继续回落快照 */
+        /* 接口存在但抓取失败时继续回落，本会话不再重试该源 */
+        apiFailures.add(source.key);
       }
     }
     if (live && live.every(Boolean)) return live;
@@ -261,11 +265,9 @@
   }
 
   async function load(source) {
+    const direct = DIRECT_LOAD[source.key];
     try {
-      if (source.key === 'dg') return await dongguan(source);
-      if (source.key === 'zh') return await zhuhai(source);
-      if (source.key === 'fs') return await foshan(source);
-      if (source.key === 'mo') return await macau(source);
+      if (direct) return await direct(source);
       return await radarProxyThenSnapshot(source);
     } catch (error) {
       const note = ['gz', 'jm'].includes(source.key) ? error.message : '官方数据暂不可用';
