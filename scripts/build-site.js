@@ -18,9 +18,12 @@ const WEB_FILES = [
   'home-feed.js',
   'cold-air-engine.js',
   'cold-air-test.js',
+  'announcements.js',
+  'announcements-admin.html',
+  'announcements-admin.js',
 ];
 const WEB_DIRS = ['assets', 'data', 'vendor'];
-const FN_FILES = ['app.js', 'auth.js', 'radar.js', 'news.js', 'fire.js', 'hkmo.js'];
+const FN_FILES = ['app.js', 'auth.js', 'radar.js', 'news.js', 'fire.js', 'hkmo.js', 'announcements.js'];
 
 function reset(dir) {
   fs.rmSync(dir, { recursive: true, force: true });

@@ -3,10 +3,11 @@ import { issue, check, matches } from './auth.js';
 import { PROVIDERS } from './radar.js';
 import { fetchIndex, SOURCE as NEWS_SOURCE, PAGE_SIZE } from './news.js';
 import { fetchGdFire, SOURCE as FIRE_SOURCE, CITIES } from './fire.js';
+import { handleAnnouncements } from './announcements.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
   'Access-Control-Max-Age': '86400',
 };
@@ -187,7 +188,16 @@ export default {
     if (path === '/api/warning-hkmo') return handleHkmo(request, url, env);
     if (path === '/api/gd-news') return handleNews(url);
     if (path === '/api/gd-fire') return json(await handleFire(url.searchParams.get('fresh') === '1'));
-    if (path === '/api/health') return json({ ok: true, auth: Boolean(env.RADAR_AUTH_SECRET) });
+    if (path === '/api/announcements' || path.startsWith('/api/announcements/')) {
+      return handleAnnouncements(request, url, env);
+    }
+    if (path === '/api/health') {
+      return json({
+        ok: true,
+        auth: Boolean(env.RADAR_AUTH_SECRET),
+        announcements: Boolean(env.PG_CONNECTION_STRING || env.PG_HOST),
+      });
+    }
 
     const radarMatch = path.match(RADAR_ROUTE);
     if (radarMatch) return handleRadar(request, url, radarMatch);

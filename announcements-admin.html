@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#eef6fa" />
+<meta name="robots" content="noindex, nofollow" />
+<title>公告管理 · 风雨溯元</title>
+<style>
+  :root {
+    --ink: #14303f;
+    --muted: #718795;
+    --line: rgba(20, 60, 80, .12);
+    --accent: #1f6fae;
+    --paper: #fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    background: radial-gradient(900px 500px at 10% -6%, #e2f3fb 0%, rgba(226,243,251,0) 62%), #f4f9fc;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px max(16px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  header.page { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  header.page h1 { margin: 0; font-size: 20px; letter-spacing: .01em; }
+  header.page p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  a.back { color: var(--accent); text-decoration: none; font-size: 13px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 14px 34px rgba(18, 66, 96, .08); padding: 16px; margin-bottom: 16px; }
+  .connect { display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 10px; align-items: end; }
+  label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+  input, textarea, select, button { font: inherit; color: inherit; }
+  input[type="url"], input[type="password"], input[type="text"], input[type="datetime-local"], textarea, select {
+    width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px;
+    background: #fbfdfe; outline: none;
+  }
+  input:focus-visible, textarea:focus-visible, select:focus-visible { border-color: #7fb2d5; box-shadow: 0 0 0 3px rgba(31,111,174,.12); }
+  textarea { min-height: 96px; resize: vertical; }
+  button { min-height: 40px; padding: 0 14px; border: 1px solid transparent; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: #fff; border-color: var(--line); color: var(--ink); }
+  button.danger { background: #fff; border-color: rgba(190, 60, 60, .35); color: #b03d3d; }
+  button:disabled { opacity: .55; cursor: default; }
+  .hint { margin: 8px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  .status { margin-top: 10px; font-size: 12.5px; color: var(--muted); min-height: 18px; }
+  .status.error { color: #b03d3d; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .toolbar h2 { margin: 0; font-size: 15px; }
+  .toolbar .count { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .toolbar .actions { display: flex; gap: 8px; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .item { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fcfdfe; }
+  .item-head { display: flex; align-items: flex-start; gap: 10px; }
+  .item-title { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; word-break: break-word; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .badge { font-size: 11px; line-height: 1; padding: 4px 8px; border-radius: 999px; background: #eef6fa; color: #33627f; }
+  .badge.on { background: #e7f6ec; color: #2c7a45; }
+  .badge.off { background: #f3f4f5; color: #77828a; }
+  .badge.warn { background: #fdf3e4; color: #9a6412; }
+  .badge.pin { background: #e8f0fb; color: #2a5ea8; }
+  .item-meta { margin-top: 8px; font-size: 11.5px; color: var(--muted); line-height: 1.7; word-break: break-all; }
+  .item-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .item-actions button { min-height: 34px; padding: 0 12px; font-size: 12.5px; }
+  .empty { padding: 26px 10px; text-align: center; color: var(--muted); font-size: 13px; }
+  dialog { border: 1px solid var(--line); border-radius: 18px; padding: 0; width: min(560px, calc(100vw - 28px)); box-shadow: 0 26px 70px rgba(15, 50, 75, .28); }
+  dialog::backdrop { background: rgba(12, 35, 50, .38); }
+  .editor { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .editor h3 { margin: 0; font-size: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .checks { display: flex; gap: 18px; flex-wrap: wrap; }
+  .checks label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink); }
+  .checks input { width: 18px; height: 18px; min-height: 0; }
+  .editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  @media (max-width: 640px) {
+    .connect { grid-template-columns: 1fr; }
+    .grid2 { grid-template-columns: 1fr; }
+    button { min-height: 44px; }
+    .editor { padding: 16px 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <div>
+      <h1>公告管理</h1>
+      <p>风雨溯元 · CloudBase PostgreSQL</p>
+    </div>
+    <a class="back" href="./">返回首页</a>
+  </header>
+
+  <section class="card">
+    <form class="connect" id="connectForm" novalidate>
+      <label class="field">接口地址
+        <input id="apiBase" type="url" placeholder="https://xxx.service.tcloudbase.com" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="field">管理口令
+        <input id="adminToken" type="password" placeholder="ANNOUNCE_ADMIN_TOKEN" autocomplete="current-password" />
+      </label>
+      <button id="connectBtn" type="submit">连接</button>
+    </form>
+    <p class="hint">接口地址填 CloudBase HTTP 访问服务的根地址（不要带结尾斜杠），口令与云函数环境变量 ANNOUNCE_ADMIN_TOKEN 一致，只保存在当前标签页。</p>
+    <p class="status" id="connectStatus"></p>
+  </section>
+
+  <section class="card" id="listCard" hidden>
+    <div class="toolbar">
+      <h2>公告列表 <span class="count" id="itemCount"></span></h2>
+      <div class="actions">
+        <button class="ghost" id="refreshBtn" type="button">刷新</button>
+        <button id="createBtn" type="button">新增公告</button>
+      </div>
+    </div>
+    <div class="list" id="itemList"></div>
+  </section>
+</div>
+
+<dialog id="editorDialog">
+  <form class="editor" id="editorForm">
+    <h3 id="editorTitle">新增公告</h3>
+    <label class="field">标题
+      <input id="fTitle" type="text" maxlength="120" required />
+    </label>
+    <label class="field">正文（可选）
+      <textarea id="fBody" maxlength="2000" placeholder="公告详情，仅管理页可见"></textarea>
+    </label>
+    <div class="grid2">
+      <label class="field">级别
+        <select id="fLevel">
+          <option value="info">普通</option>
+          <option value="warning">提醒</option>
+        </select>
+      </label>
+      <label class="field">链接（可选）
+        <input id="fUrl" type="url" maxlength="500" placeholder="https://..." />
+      </label>
+    </div>
+    <div class="grid2">
+      <label class="field">开始时间（可选）
+        <input id="fStartsAt" type="datetime-local" />
+      </label>
+      <label class="field">结束时间（可选）
+        <input id="fEndsAt" type="datetime-local" />
+      </label>
+    </div>
+    <div class="checks">
+      <label><input id="fPinned" type="checkbox" />置顶</label>
+      <label><input id="fPublished" type="checkbox" checked />发布</label>
+    </div>
+    <p class="status error" id="editorStatus" hidden></p>
+    <div class="editor-actions">
+      <button class="ghost" id="cancelBtn" type="button">取消</button>
+      <button id="saveBtn" type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="api-config.js"></script>
+<script src="announcements-admin.js"></script>
+</body>
+</html>
