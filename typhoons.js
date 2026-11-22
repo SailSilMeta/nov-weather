@@ -506,6 +506,42 @@
     }
   }
 
+  function isUnnamedStorm(storm) {
+    if (!storm) return false;
+    const name = String(storm.name || '').trim();
+    const en = String(storm.enname || '').trim().toLowerCase();
+    // 中央气象台列表会清空无名系统英文名，只剩中文“热带低压”，需要一并识别
+    return !name || /^未命名/.test(name) || /^热带低压\d*$/.test(name) || en === 'nameless' || en === 'unnamed';
+  }
+
+  function unnamedEntries() {
+    return state.list
+      .filter((item) => isUnnamedStorm(item))
+      .slice()
+      .sort((a, b) => ((Number(a.number) || 0) - (Number(b.number) || 0)) || String(a.id).localeCompare(String(b.id)));
+  }
+
+  function unnamedName(storm) {
+    const found = unnamedEntries().findIndex((item) => item.id === storm.id);
+    return found >= 0 ? `热带低压${found + 1}` : '未命名台风';
+  }
+
+  /* 热带低压没有正式编号，按年份重新编 2026001、2026002… */
+  function stormNumber(storm) {
+    if (!storm) return '';
+    const official = String(storm.number || '');
+    if (!isUnnamedStorm(storm)) return official;
+    const found = unnamedEntries().findIndex((item) => item.id === storm.id);
+    if (found < 0) return official;
+    const year = (/^(\d{4})\d+$/.exec(official) || [])[1] || String(state.year || '');
+    return `${year}${String(found + 1).padStart(3, '0')}`;
+  }
+
+  function stormTitle(storm) {
+    if (!storm) return '未命名台风';
+    return isUnnamedStorm(storm) ? unnamedName(storm) : (storm.name || '未命名台风');
+  }
+
   function renderOverview() {
     const storm = state.storm;
     const latest = state.points.at(-1);
@@ -516,7 +552,7 @@
     const movement = latest.raw.jl || (latest.moveSpeed
       ? latest.direction === '少动' ? '移动缓慢' : `以 ${latest.moveSpeed} 公里/小时向${latest.direction || '未知方向'}移动`
       : '');
-    $('#tpStormOverview').innerHTML = `<div class="tp-storm-kicker"><span>${esc(storm.number || '编号未提供')} · 台风编号</span><b class="${active && !outdated ? 'is-active' : ''}">${status}</b></div><h2>${esc(storm.name || '未命名台风')}</h2><p class="tp-enname">${esc(storm.enname || '')}</p><div class="tp-storm-status" style="--storm:${strengthColor(latest)}"><i></i><strong>${esc(latest.strong)}</strong><span>截至 ${timeLabel(latest.ts)}</span></div>${outdated ? '<p class="tp-stale-warning">最新实况已超过 18 小时，请核对官方更新，勿视为当前位置。</p>' : ''}<p class="tp-position">${esc(position)}</p>${movement ? `<p class="tp-movement">${esc(movement)}</p>` : ''}<p class="tp-obs-source">实况路径：${sourceNames[storm.source] || '—'}</p>`;
+    $('#tpStormOverview').innerHTML = `<div class="tp-storm-kicker"><span>${esc(stormNumber(storm) || '编号未提供')} · 台风编号</span><b class="${active && !outdated ? 'is-active' : ''}">${status}</b></div><h2>${esc(stormTitle(storm))}</h2><p class="tp-enname">${esc(isUnnamedStorm(storm) ? '' : (storm.enname || ''))}</p><div class="tp-storm-status" style="--storm:${strengthColor(latest)}"><i></i><strong>${esc(latest.strong)}</strong><span>截至 ${timeLabel(latest.ts)}</span></div>${outdated ? '<p class="tp-stale-warning">最新实况已超过 18 小时，请核对官方更新，勿视为当前位置。</p>' : ''}<p class="tp-position">${esc(position)}</p>${movement ? `<p class="tp-movement">${esc(movement)}</p>` : ''}<p class="tp-obs-source">实况路径：${sourceNames[storm.source] || '—'}</p>`;
   }
 
   function selectPoint(index) {
@@ -539,7 +575,7 @@
     state.marker = L.marker(coordinate(point), {
       zIndexOffset: 600,
       icon: L.divIcon({ className: 'tp-eye-marker', html: `<span style="--storm:${strengthColor(point)}"><i></i></span>`, iconSize: [44, 44], iconAnchor: [22, 22] }),
-      title: `${state.storm.name} ${timeLabel(point.ts)}`,
+      title: `${stormTitle(state.storm)} ${timeLabel(point.ts)}`,
     }).bindPopup(popup(point, latest ? '最新实况点' : '所选历史点'))
       .on('mouseover', () => showHover(point, latest ? '最新实况点' : '所选历史点'))
       .on('mouseout', hideHover)
@@ -673,7 +709,7 @@
         fitTrack();
         return;
       }
-      $('#tpStorm').innerHTML = state.list.map((storm) => `<option value="${storm.id}">${esc(storm.name)} · ${esc(storm.number || '未编号')}${storm.active ? ' · 活跃记录' : ''}</option>`).join('');
+      $('#tpStorm').innerHTML = state.list.map((storm) => `<option value="${storm.id}">${esc(stormTitle(storm))} · ${esc(stormNumber(storm) || '未编号')}${storm.active ? ' · 活跃记录' : ''}</option>`).join('');
       $('#tpStorm').disabled = false;
       const id = state.list.some((s) => s.id === previous) ? previous : state.list[0].id;
       $('#tpStorm').value = id;
