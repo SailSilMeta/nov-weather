@@ -67,10 +67,29 @@
   dialog::backdrop { background: rgba(12, 35, 50, .38); }
   .editor { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
   .editor h3 { margin: 0; font-size: 16px; }
+  .editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .editor-close { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; min-width: 30px; min-height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: #fff; color: var(--muted); cursor: pointer; }
+  .editor-close:hover { border-color: #7fb2d5; background: #f2f8fc; color: var(--ink); }
+  .editor-close:focus-visible { outline: 2px solid #7fb2d5; outline-offset: 2px; }
+  .editor-close svg { width: 14px; height: 14px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .checks { display: flex; gap: 18px; flex-wrap: wrap; }
   .checks label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink); }
   .checks input { width: 18px; height: 18px; min-height: 0; }
+  .colorbar { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfdfe; }
+  .colorbar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; color: var(--muted); }
+  .colorbar-head strong { flex: none; font-size: 12px; font-weight: 600; color: var(--ink); }
+  .colorbar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+  .swatch-list { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+  .swatch { width: 26px; height: 26px; min-width: 26px; min-height: 26px; padding: 0; border: 1px solid rgba(20, 60, 80, .18); border-radius: 50%; background: var(--swatch, #fff); cursor: pointer; }
+  .swatch:hover { transform: scale(1.08); }
+  .swatch:focus-visible { outline: 2px solid #7fb2d5; outline-offset: 2px; }
+  .swatch-default { min-height: 26px; height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); font-size: 11.5px; cursor: pointer; }
+  .swatch-default:hover { color: var(--ink); border-color: #7fb2d5; }
+  input[type="color"] { width: 36px; height: 28px; min-height: 0; padding: 0 2px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+  .color-preview { max-height: 128px; overflow: auto; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 10px; background: #fff; font-size: 12.5px; line-height: 1.7; word-break: break-word; white-space: pre-wrap; }
+  .color-preview:empty { display: none; }
+  .preview-label { margin-right: 6px; font-size: 11px; color: var(--muted); }
   .editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
   @media (max-width: 640px) {
     .connect { grid-template-columns: 1fr; }
@@ -118,13 +137,30 @@
 
 <dialog id="editorDialog">
   <form class="editor" id="editorForm">
-    <h3 id="editorTitle">新增公告</h3>
+    <div class="editor-head">
+      <h3 id="editorTitle">新增公告</h3>
+      <button class="editor-close" id="editorClose" type="button" aria-label="关闭编辑窗">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
     <label class="field">标题
       <input id="fTitle" type="text" maxlength="120" required />
     </label>
     <label class="field">正文（可选）
       <textarea id="fBody" maxlength="2000" placeholder="公告详情，仅管理页可见"></textarea>
     </label>
+    <div class="colorbar">
+      <div class="colorbar-head">
+        <strong>文字颜色</strong>
+        <span>选中标题或正文里的文字后点色块；颜色以标记保存，公告栏会自动渲染</span>
+      </div>
+      <div class="colorbar-row">
+        <div class="swatch-list" id="swatchList"></div>
+        <input id="customColor" type="color" value="#d33b3b" title="自定义颜色" aria-label="自定义颜色" />
+        <button class="swatch-default" id="clearColor" type="button">恢复默认</button>
+      </div>
+      <div class="color-preview" id="colorPreview"></div>
+    </div>
     <div class="grid2">
       <label class="field">级别
         <select id="fLevel">

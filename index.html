@@ -21,11 +21,14 @@
         <span>粤 · 湘 · 桂 · 赣 · 闽</span>
       </div>
     </div>
-    <div class="top-announce" id="announceBar" role="region" aria-label="站点公告" hidden>
+    <div class="top-announce" id="announceBar" role="button" tabindex="0" aria-label="站点公告，点击查看全部" aria-haspopup="dialog" aria-controls="announceModal" aria-expanded="false" hidden>
       <span class="announce-tag">公告</span>
       <div class="announce-viewport" id="announceViewport">
         <div class="announce-track" id="announceTrack"></div>
       </div>
+      <span class="announce-open" aria-hidden="true">
+        <svg viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
     </div>
     <div class="top-actions">
       <span class="status" id="statusChip"><i class="dot"></i><span id="statusText">载入中</span></span>
@@ -817,6 +820,19 @@
 </section>
 
 <div class="toast" id="toast" role="status"></div>
+
+<div class="announce-modal" id="announceModal" hidden>
+  <div class="announce-mask" data-announce-close></div>
+  <div class="announce-card" role="dialog" aria-modal="true" aria-labelledby="announceCardTitle" tabindex="-1">
+    <header class="announce-card-head">
+      <h2 id="announceCardTitle">站点公告</h2>
+      <button class="announce-close" id="announceClose" type="button" aria-label="关闭公告">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="announce-card-body" id="announceBody"></div>
+  </div>
+</div>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/echarts.min.js"></script>

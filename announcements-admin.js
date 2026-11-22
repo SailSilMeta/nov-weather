@@ -44,11 +44,27 @@
     editorStatus: document.getElementById('editorStatus'),
     saveBtn: document.getElementById('saveBtn'),
     cancelBtn: document.getElementById('cancelBtn'),
+    editorClose: document.getElementById('editorClose'),
+    swatchList: document.getElementById('swatchList'),
+    customColor: document.getElementById('customColor'),
+    clearColor: document.getElementById('clearColor'),
+    colorPreview: document.getElementById('colorPreview'),
   };
 
   if (!els.connectForm || !els.dialog) return;
 
-  var state = { base: '', token: '', items: [], editingId: null };
+  var state = { base: '', token: '', items: [], editingId: null, colorField: null };
+
+  var PRESET_COLORS = [
+    { color: '#d33b3b', name: '红色' },
+    { color: '#e07b12', name: '橙色' },
+    { color: '#b48910', name: '金色' },
+    { color: '#2c7a45', name: '绿色' },
+    { color: '#1f6fae', name: '蓝色' },
+    { color: '#7048c8', name: '紫色' },
+    { color: '#b0306e', name: '玫红' },
+    { color: '#14303f', name: '深灰' },
+  ];
 
   function readStore(key) {
     try {
@@ -160,6 +176,152 @@
     return isNaN(date.getTime()) ? null : date.toISOString();
   }
 
+  function appendRichText(target, text) {
+    var value = typeof text === 'string' ? text : '';
+    var re = /\[c=(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))\]([\s\S]*?)\[\/c\]/g;
+    var last = 0;
+    var match;
+    while ((match = re.exec(value))) {
+      if (match.index > last) target.appendChild(document.createTextNode(value.slice(last, match.index)));
+      var span = document.createElement('span');
+      span.style.color = match[1];
+      span.textContent = match[2];
+      target.appendChild(span);
+      last = re.lastIndex;
+    }
+    if (last < value.length) target.appendChild(document.createTextNode(value.slice(last)));
+    return target;
+  }
+
+  function stripColors(text) {
+    var value = String(text == null ? '' : text);
+    var re = /\[c=#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\]([\s\S]*?)\[\/c\]/g;
+    var next = value.replace(re, '$1');
+    while (next !== value) {
+      value = next;
+      next = value.replace(re, '$1');
+    }
+    return value
+      .replace(/\[c=#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\]/g, '')
+      .replace(/\[\/c\]/g, '');
+  }
+
+  function colorRuns(text) {
+    var re = /\[c=#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\]|\[\/c\]/g;
+    var stack = [];
+    var runs = [];
+    var match;
+    while ((match = re.exec(text))) {
+      if (match[0] === '[/c]') {
+        var open = stack.pop();
+        if (open) runs.push({ start: open.start, end: re.lastIndex });
+      } else {
+        stack.push({ start: match.index, end: re.lastIndex });
+      }
+    }
+    return runs;
+  }
+
+  function expandSelection(text, start, end) {
+    var s = start;
+    var e = end;
+    var changed = true;
+    while (changed) {
+      changed = false;
+      var runs = colorRuns(text);
+      for (var i = 0; i < runs.length; i += 1) {
+        var run = runs[i];
+        if (s >= run.end || e <= run.start) continue;
+        if (s > run.start) { s = run.start; changed = true; }
+        if (e < run.end) { e = run.end; changed = true; }
+      }
+    }
+    return { start: s, end: e };
+  }
+
+  function updatePreview() {
+    if (!els.colorPreview) return;
+    var title = els.fTitle.value.trim();
+    var body = els.fBody.value.trim();
+    els.colorPreview.textContent = '';
+    if (!title && !body) return;
+
+    function previewLine(labelText, value) {
+      var row = document.createElement('div');
+      var label = document.createElement('span');
+      label.className = 'preview-label';
+      label.textContent = labelText;
+      row.appendChild(label);
+      appendRichText(row, value);
+      return row;
+    }
+
+    if (title) els.colorPreview.appendChild(previewLine('标题', title));
+    if (body) els.colorPreview.appendChild(previewLine('正文', body));
+  }
+
+  function applyColor(color) {
+    var field = state.colorField || els.fTitle;
+    if (document.activeElement === field) {
+      state.selStart = field.selectionStart;
+      state.selEnd = field.selectionEnd;
+    }
+    var text = field.value;
+    var start = Math.min(state.selStart || 0, text.length);
+    var end = Math.min(Math.max(state.selEnd || 0, start), text.length);
+
+    if (start === end) {
+      if (color) {
+        setEditorStatus('先在标题或正文里选中要上色的文字，再点色块', true);
+        return;
+      }
+      start = 0;
+      end = text.length;
+    }
+    if (start === end) return;
+
+    var range = expandSelection(text, start, end);
+    var inner = stripColors(text.slice(range.start, range.end));
+    var open = color ? '[c=' + color + ']' : '';
+    var next = text.slice(0, range.start) + open + inner + (color ? '[/c]' : '') + text.slice(range.end);
+    var limit = field.maxLength;
+    if (limit > 0 && next.length > limit) {
+      setEditorStatus('加上颜色标记后超过 ' + limit + ' 字上限，请缩短文字后再试', true);
+      return;
+    }
+
+    field.value = next;
+    var caret = range.start + open.length;
+    field.setSelectionRange(caret, caret + inner.length);
+    state.selStart = caret;
+    state.selEnd = caret + inner.length;
+    field.focus();
+    updatePreview();
+    setEditorStatus('');
+  }
+
+  function buildPalette() {
+    if (!els.swatchList) return;
+    PRESET_COLORS.forEach(function (preset) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'swatch';
+      btn.style.setProperty('--swatch', preset.color);
+      btn.title = preset.name;
+      btn.setAttribute('aria-label', '设为' + preset.name);
+      btn.addEventListener('click', function () {
+        applyColor(preset.color);
+      });
+      els.swatchList.appendChild(btn);
+    });
+  }
+
+  function trackSelection(field) {
+    state.colorField = field;
+    state.selStart = field.selectionStart;
+    state.selEnd = field.selectionEnd;
+  }
+
   function statusOf(item) {
     var now = Date.now();
     if (!item.published) return { label: '已下线', cls: 'off' };
@@ -189,7 +351,7 @@
     head.className = 'item-head';
     var title = document.createElement('div');
     title.className = 'item-title';
-    title.textContent = item.title;
+    appendRichText(title, item.title);
     head.appendChild(title);
     card.appendChild(head);
 
@@ -206,7 +368,8 @@
     meta.className = 'item-meta';
     meta.appendChild(metaLine('时间：' + timeRange(item)));
     if (item.body) {
-      meta.appendChild(metaLine('正文：' + (item.body.length > 60 ? item.body.slice(0, 60) + '…' : item.body)));
+      var plainBody = stripColors(item.body);
+      meta.appendChild(metaLine('正文：' + (plainBody.length > 60 ? plainBody.slice(0, 60) + '…' : plainBody)));
     }
     if (item.url) meta.appendChild(metaLine('链接：' + item.url));
     meta.appendChild(metaLine('更新：' + formatTime(item.updatedAt || item.createdAt)));
@@ -309,6 +472,10 @@
     els.fEndsAt.value = item ? toLocalInput(item.endsAt) : '';
     els.fPinned.checked = item ? Boolean(item.pinned) : false;
     els.fPublished.checked = item ? item.published !== false : true;
+    state.colorField = els.fTitle;
+    state.selStart = 0;
+    state.selEnd = 0;
+    updatePreview();
     setEditorStatus('');
     if (typeof els.dialog.showModal === 'function') {
       if (!els.dialog.open) els.dialog.showModal();
@@ -332,8 +499,13 @@
       return;
     }
     var title = els.fTitle.value.trim();
-    if (!title) {
+    var plainTitle = stripColors(title).trim();
+    if (!plainTitle) {
       setEditorStatus('标题不能为空', true);
+      return;
+    }
+    if (title.length > els.fTitle.maxLength || els.fBody.value.trim().length > els.fBody.maxLength) {
+      setEditorStatus('标题或正文超出字数上限，请缩短后再保存', true);
       return;
     }
     var startsAt = els.fStartsAt.value;
@@ -355,6 +527,7 @@
 
     els.saveBtn.disabled = true;
     els.cancelBtn.disabled = true;
+    if (els.editorClose) els.editorClose.disabled = true;
     setEditorStatus('正在保存…');
     try {
       if (state.editingId) {
@@ -364,24 +537,58 @@
       }
       closeEditor();
       await refreshList(false);
-      setConnectStatus('已保存「' + title + '」');
+      setConnectStatus('已保存「' + plainTitle + '」');
     } catch (error) {
       setEditorStatus(error.message, true);
     } finally {
       els.saveBtn.disabled = false;
       els.cancelBtn.disabled = false;
+      if (els.editorClose) els.editorClose.disabled = false;
     }
   }
 
   async function deleteItem(item) {
-    if (!window.confirm('确定删除「' + item.title + '」？删除后无法恢复。')) return;
+    var plainTitle = stripColors(item.title);
+    if (!window.confirm('确定删除「' + plainTitle + '」？删除后无法恢复。')) return;
     try {
       await request('/api/announcements/admin/' + item.id, { method: 'DELETE' });
       await refreshList(false);
-      setConnectStatus('已删除「' + item.title + '」');
+      setConnectStatus('已删除「' + plainTitle + '」');
     } catch (error) {
       setConnectStatus(error.message, true);
     }
+  }
+
+  function wireColorField(field) {
+    ['focus', 'select', 'mouseup', 'keyup', 'input'].forEach(function (type) {
+      field.addEventListener(type, function () {
+        trackSelection(field);
+      });
+    });
+    field.addEventListener('input', updatePreview);
+  }
+
+  function captureSelection() {
+    if (state.colorField) trackSelection(state.colorField);
+  }
+
+  buildPalette();
+  wireColorField(els.fTitle);
+  wireColorField(els.fBody);
+  if (els.swatchList) els.swatchList.addEventListener('mousedown', captureSelection);
+  if (els.customColor) {
+    els.customColor.addEventListener('mousedown', captureSelection);
+    els.customColor.addEventListener('input', function () {
+      applyColor(els.customColor.value);
+    });
+    els.customColor.addEventListener('change', function () {
+      applyColor(els.customColor.value);
+    });
+  }
+  if (els.clearColor) {
+    els.clearColor.addEventListener('click', function () {
+      applyColor('');
+    });
   }
 
   els.connectForm.addEventListener('submit', connect);
@@ -397,12 +604,13 @@
   });
   els.editorForm.addEventListener('submit', saveItem);
   els.cancelBtn.addEventListener('click', closeEditor);
+  if (els.editorClose) els.editorClose.addEventListener('click', closeEditor);
+  els.dialog.addEventListener('cancel', function (event) {
+    event.preventDefault();
+  });
   els.dialog.addEventListener('close', function () {
     state.editingId = null;
     setEditorStatus('');
-  });
-  els.dialog.addEventListener('click', function (event) {
-    if (event.target === els.dialog) closeEditor();
   });
   els.itemList.addEventListener('click', function (event) {
     var button = event.target.closest('button[data-action]');
