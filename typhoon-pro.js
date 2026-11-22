@@ -497,7 +497,8 @@
     if (!storm) return false;
     const name = String(storm.name || '').trim();
     const en = String(storm.enname || '').trim().toLowerCase();
-    return !name || /^未命名/.test(name) || en === 'nameless' || en === 'unnamed';
+    // 中央气象台列表会把无名系统的英文名清空，只剩中文“热带低压”，需要一并识别
+    return !name || /^未命名/.test(name) || /^热带低压\d*$/.test(name) || en === 'nameless' || en === 'unnamed';
   }
 
   function unnamedName(storm) {
@@ -505,7 +506,8 @@
     const entries = list
       .map((item, index) => ({ item, index }))
       .filter((entry) => isUnnamedStorm(entry.item))
-      .sort((a, b) => ((a.item.start || 0) - (b.item.start || 0)) || (a.index - b.index));
+      .sort((a, b) => ((Number(a.item.number) || 0) - (Number(b.item.number) || 0))
+        || ((a.item.start || 0) - (b.item.start || 0)) || (a.index - b.index));
     const found = entries.findIndex((entry) => entry.item.id === storm.id);
     return found >= 0 ? `热带低压${found + 1}` : '未命名台风';
   }
